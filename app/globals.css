@@ -24,3 +24,285 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes glowOrbA {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.98);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translate3d(22px, -20px, 0) scale(1.06);
+    opacity: 0.54;
+  }
+  65% {
+    transform: translate3d(-22px, 18px, 0) scale(0.95);
+    opacity: 0.36;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.98);
+    opacity: 0.4;
+  }
+}
+
+@keyframes glowOrbB {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.97);
+    opacity: 0.36;
+  }
+  45% {
+    transform: translate3d(-20px, 20px, 0) scale(1.06);
+    opacity: 0.52;
+  }
+  75% {
+    transform: translate3d(18px, -14px, 0) scale(0.94);
+    opacity: 0.34;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.97);
+    opacity: 0.36;
+  }
+}
+
+@keyframes glowOrbC {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.38;
+  }
+  35% {
+    transform: translate3d(18px, 16px, 0) scale(1.08);
+    opacity: 0.5;
+  }
+  70% {
+    transform: translate3d(-14px, -12px, 0) scale(0.93);
+    opacity: 0.34;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.38;
+  }
+}
+
+@keyframes glowOrbD {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.95);
+    opacity: 0.32;
+  }
+  40% {
+    transform: translate3d(16px, -18px, 0) scale(1.04);
+    opacity: 0.46;
+  }
+  80% {
+    transform: translate3d(-12px, 10px, 0) scale(0.92);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.95);
+    opacity: 0.32;
+  }
+}
+
+@keyframes glowGradientFlow {
+  0% {
+    background-position: 22% 28%;
+  }
+  50% {
+    background-position: 80% 72%;
+  }
+  100% {
+    background-position: 32% 30%;
+  }
+}
+
+.glow-orb {
+  --orb-purple: rgba(168, 85, 247, 0.5);
+  --orb-blue: rgba(59, 130, 246, 0.42);
+  --orb-cyan: rgba(34, 211, 238, 0.34);
+  --orb-pink: rgba(219, 39, 119, 0.38);
+  border-radius: 9999px;
+  mix-blend-mode: screen;
+  filter: blur(120px);
+  opacity: 0.44;
+  background:
+    radial-gradient(circle at 26% 24%, var(--orb-purple) 0%, transparent 42%),
+    radial-gradient(circle at 70% 30%, var(--orb-blue) 8%, transparent 52%),
+    radial-gradient(circle at 38% 74%, var(--orb-cyan) 10%, transparent 56%),
+    radial-gradient(circle at 78% 70%, var(--orb-pink) 8%, transparent 54%);
+  background-size: 150% 150%;
+  will-change: transform, opacity, background-position;
+}
+
+.animate-glow-orb-a {
+  animation:
+    glowOrbA 21s ease-in-out infinite,
+    glowGradientFlow 15s ease-in-out infinite alternate;
+}
+
+.animate-glow-orb-b {
+  animation:
+    glowOrbB 18s ease-in-out infinite,
+    glowGradientFlow 13s ease-in-out infinite alternate-reverse;
+}
+
+.animate-glow-orb-c {
+  animation:
+    glowOrbC 17s ease-in-out infinite,
+    glowGradientFlow 12s ease-in-out infinite;
+}
+
+.animate-glow-orb-d {
+  animation:
+    glowOrbD 16s ease-in-out infinite,
+    glowGradientFlow 11s ease-in-out infinite alternate;
+}
+
+.animate-glow-orb-e {
+  animation:
+    glowOrbB 19s ease-in-out infinite reverse,
+    glowGradientFlow 14s ease-in-out infinite alternate-reverse;
+}
+
+.animate-glow-orb-f {
+  animation:
+    glowOrbC 15s ease-in-out infinite reverse,
+    glowGradientFlow 10s ease-in-out infinite;
+}
+
+/* ---------- Animated CTA buttons (VoxBridge) ---------- */
+
+@keyframes voxBtnGlowShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.anim-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 280ms ease,
+    background-color 220ms ease,
+    background-image 220ms ease,
+    border-color 220ms ease,
+    color 200ms ease,
+    filter 220ms ease;
+  will-change: transform;
+}
+
+.anim-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    120deg,
+    #a855f7 0%,
+    #3b82f6 30%,
+    #22d3ee 55%,
+    #db2777 80%,
+    #a855f7 100%
+  );
+  background-size: 280% 280%;
+  background-position: 0% 50%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 320ms ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.anim-btn::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: inherit;
+  background: radial-gradient(
+    closest-side,
+    rgba(168, 85, 247, 0.55),
+    rgba(59, 130, 246, 0.35) 40%,
+    rgba(34, 211, 238, 0.22) 65%,
+    rgba(219, 39, 119, 0.18) 80%,
+    transparent 90%
+  );
+  filter: blur(20px);
+  opacity: 0;
+  transition: opacity 360ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.anim-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+.anim-btn:hover::before {
+  opacity: 1;
+  animation: voxBtnGlowShift 2.6s ease-in-out infinite alternate;
+}
+
+.anim-btn:hover::after {
+  opacity: 1;
+}
+
+.anim-btn:active {
+  transform: translateY(0) scale(0.96);
+  transition-duration: 90ms;
+}
+
+.anim-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55);
+}
+
+.anim-btn:disabled,
+.anim-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  filter: saturate(0.7);
+}
+
+.anim-btn-primary {
+  background-image: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  background-color: #7c3aed;
+  color: #ffffff;
+  box-shadow: 0 6px 22px -14px rgba(124, 58, 237, 0.55);
+}
+
+.anim-btn-primary:hover {
+  background-image: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  box-shadow: 0 14px 36px -14px rgba(168, 85, 247, 0.6);
+}
+
+.anim-btn-secondary {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f4f4f5;
+}
+
+.anim-btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 12px 30px -16px rgba(99, 102, 241, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-btn,
+  .anim-btn::before,
+  .anim-btn::after {
+    transition: none;
+    animation: none !important;
+  }
+  .anim-btn:hover,
+  .anim-btn:active {
+    transform: none;
+  }
+}
