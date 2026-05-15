@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { registerStoredUser } from "@/lib/auth";
@@ -16,6 +16,20 @@ const roleLabels: Record<Role, string> = {
 };
 
 export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-black text-zinc-300">
+          Loading...
+        </main>
+      }
+    >
+      <SignupPageContent />
+    </Suspense>
+  );
+}
+
+function SignupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRoleParam = searchParams.get("role");
@@ -41,7 +55,8 @@ export default function SignupPage() {
       password: form.password,
     });
 
-    window.setTimeout(() => router.push("/home"), 150);
+    const destination = role === "vocalist" ? "/vocalist/onboarding" : "/home";
+    window.setTimeout(() => router.push(destination), 150);
   };
 
   return (

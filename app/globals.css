@@ -306,3 +306,28 @@ body {
     transform: none;
   }
 }
+
+/* ---------- Living waveform bars (home workspace) ---------- */
+
+@keyframes wave-bar-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-wave-bar {
+  transform-origin: bottom center;
+  animation-name: wave-bar-pulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-wave-bar {
+    animation: none;
+  }
+}

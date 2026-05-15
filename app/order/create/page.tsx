@@ -1,6 +1,17 @@
+"use client";
+
+import { Suspense } from "react";
 import { useSearchParams } from 'next/navigation';
 
 export default function CreateOrder() {
+  return (
+    <Suspense fallback={<div className="container mx-auto p-8 text-white">Loading order...</div>}>
+      <CreateOrderContent />
+    </Suspense>
+  );
+}
+
+function CreateOrderContent() {
   const params = useSearchParams();
   const requestId = params.get('request_id');
   const vocalistId = params.get('vocalist_id');

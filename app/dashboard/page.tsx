@@ -1,15 +1,30 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthUser, clearStoredUser, getStoredUser, saveStoredUser } from "@/lib/auth";
 import PasswordInput from "@/components/password-input";
 import { AnimatedButton } from "@/components/animated-button";
 import InternalShell from "@/components/internal-shell";
+import { ProducerProjectsSection } from "@/components/producer-projects-section";
 
 type TabKey = "overview" | "profile" | "settings" | "vocal-profile" | "samples" | "projects" | "saved-vocalists";
 
 export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-black px-6 text-zinc-300">
+          Loading dashboard...
+        </main>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -57,7 +72,10 @@ export default function DashboardPage() {
       {safeTab === "settings" && <SettingsSection user={user} onUserChange={setUser} onLogout={onLogout} />}
       {safeTab === "vocal-profile" && <Placeholder title="My Vocal Profile" body="Add your genres, range and style tags." />}
       {safeTab === "samples" && <Placeholder title="My Samples" body="Sample management UI will be added next." />}
-      {safeTab === "projects" && <Placeholder title="My Projects" body="Track and manage your vocal search projects." />}
+      {safeTab === "projects" && user.role === "producer" && <ProducerProjectsSection />}
+      {safeTab === "projects" && user.role === "vocalist" && (
+        <Placeholder title="My Projects" body="Track and manage your vocal search projects." />
+      )}
       {safeTab === "saved-vocalists" && (
         <Placeholder title="Saved Vocalists" body="Your shortlist of favorite vocalists appears here." />
       )}
