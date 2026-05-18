@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
+  getAiVocal,
   getUploadContext,
   hasAiVocalUpload,
   subscribeUploadContext,
@@ -9,25 +10,22 @@ import {
 } from "@/lib/upload-context";
 
 export function useUploadContext(): UploadContext | null {
-  const [context, setContext] = useState<UploadContext | null>(null);
-
-  useEffect(() => {
-    const sync = () => setContext(getUploadContext());
-    sync();
-    return subscribeUploadContext(sync);
-  }, []);
-
-  return context;
+  return useSyncExternalStore(
+    subscribeUploadContext,
+    () => getUploadContext(),
+    () => null
+  );
 }
 
+/** True only when aiVocal exists (file upload or explicit hasAiVocalFile). */
 export function useAiVocalExists(): boolean {
-  const [exists, setExists] = useState(false);
+  return useSyncExternalStore(
+    subscribeUploadContext,
+    hasAiVocalUpload,
+    () => false
+  );
+}
 
-  useEffect(() => {
-    const sync = () => setExists(hasAiVocalUpload());
-    sync();
-    return subscribeUploadContext(sync);
-  }, []);
-
-  return exists;
+export function useAiVocal(): UploadContext | null {
+  return useSyncExternalStore(subscribeUploadContext, () => getAiVocal(), () => null);
 }

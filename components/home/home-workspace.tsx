@@ -8,21 +8,21 @@ import {
   filterTracksBySearch,
   type HomeWorkspaceTrack,
 } from "@/lib/home-tracks";
-import { useAiVocalExists } from "@/lib/hooks/use-upload-context";
+import { useAiVocal, useAiVocalExists } from "@/lib/hooks/use-upload-context";
 import { useHomeAudio } from "@/components/home/home-audio-provider";
-import {
-  HomeActiveProjectsStrip,
-  useHomeActiveProjects,
-  type HomeViewMode,
-} from "@/components/home/home-active-projects-strip";
+import { HomeActiveProjectsStrip } from "@/components/home/home-active-projects-strip";
 import { HomeDetailPanel } from "@/components/home/home-detail-panel";
 import {
+  EXPLORE_DEFAULT_FILTERS,
   filterHomeTracks,
   HomeFiltersBar,
+  MATCHING_DEFAULT_FILTERS,
   type HomeListFilters,
 } from "@/components/home/home-filters-bar";
-import { HomeTopActionBar } from "@/components/home/home-top-action-bar";
 import { HomeTrackList } from "@/components/home/home-track-list";
+import { HomeExploreHero } from "@/components/home/home-explore-hero";
+import { HomeMatchingHeader } from "@/components/home/home-matching-header";
+import { HomeDiscoverySearch } from "@/components/home/home-discovery-search";
 import { ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
 import { usePendingVocalistRequests } from "@/lib/hooks/use-vocalist-requests";
 import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
@@ -31,33 +31,17 @@ type HomeWorkspaceProps = {
   user: AuthUser & { role: UserRole };
 };
 
-const EXPLORE_FILTERS: HomeListFilters = {
-  genre: "All",
-  voiceType: "All",
-  mood: "All",
-  sort: "trending",
-};
-
-const MATCHING_FILTERS: HomeListFilters = {
-  genre: "All",
-  voiceType: "All",
-  mood: "All",
-  sort: "match",
-};
-
 export function HomeWorkspace({ user }: HomeWorkspaceProps) {
   const router = useRouter();
   const { selectTrackId } = useHomeAudio();
   const matchingMode = useAiVocalExists();
-  const [filters, setFilters] = useState<HomeListFilters>(
-    matchingMode ? MATCHING_FILTERS : EXPLORE_FILTERS
-  );
+  const aiVocal = useAiVocal();
+  const [filters, setFilters] = useState<HomeListFilters>(EXPLORE_DEFAULT_FILTERS);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<HomeViewMode>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setFilters(matchingMode ? MATCHING_FILTERS : EXPLORE_FILTERS);
+    setFilters(matchingMode ? MATCHING_DEFAULT_FILTERS : EXPLORE_DEFAULT_FILTERS);
     setSelectedId(null);
     setSearchQuery("");
   }, [matchingMode]);
@@ -66,27 +50,11 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
     () => buildHomeWorkspaceTracks(matchingMode),
     [matchingMode]
   );
-  const activeProjects = useHomeActiveProjects(user.role, user.email);
-
-  const activeVocalistIds = useMemo(
-    () => new Set(activeProjects.map((o) => o.vocalistId)),
-    [activeProjects]
-  );
-  const activeTrackNames = useMemo(
-    () => new Set(activeProjects.map((o) => o.trackName)),
-    [activeProjects]
-  );
 
   const filteredTracks = useMemo(() => {
-    const byFilters = filterHomeTracks(
-      allTracks,
-      filters,
-      activeVocalistIds,
-      activeTrackNames,
-      viewMode
-    );
+    const byFilters = filterHomeTracks(allTracks, filters, matchingMode);
     return filterTracksBySearch(byFilters, searchQuery);
-  }, [allTracks, filters, activeVocalistIds, activeTrackNames, viewMode, searchQuery]);
+  }, [allTracks, filters, searchQuery, matchingMode]);
 
   const selectedTrack = useMemo(() => {
     if (!selectedId) return null;
@@ -128,7 +96,11 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
     [router]
   );
 
-  const listHeading = matchingMode ? "Matching results" : "Vocalists";
+  const scrollToList = useCallback(() => {
+    document.getElementById("home-vocalist-list")?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const listTitle = matchingMode ? "Matching results" : "Explore vocalists";
   const listCountLabel = matchingMode
     ? `${filteredTracks.length} match${filteredTracks.length === 1 ? "" : "es"}`
     : `${filteredTracks.length} vocalist${filteredTracks.length === 1 ? "" : "s"}`;
@@ -141,18 +113,11 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-zinc-950/80 shadow-[0_0_60px_rgba(0,0,0,0.4)] backdrop-blur-sm">
-        <HomeTopActionBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          matchingMode={matchingMode}
-        />
-
-        {matchingMode && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-purple-400/15 bg-purple-500/5 px-3 py-1.5 text-xs text-purple-100/90 md:px-4">
-            <span className="font-medium">Matching results</span>
-            <span className="text-purple-300/60">· AI vocal uploaded</span>
-          </div>
+        {!matchingMode && (
+          <HomeExploreHero role={user.role} email={user.email} onBrowse={scrollToList} />
         )}
+
+        {matchingMode && aiVocal && <HomeMatchingHeader upload={aiVocal} />}
 
         {user.role === "vocalist" && pendingRequests.length > 0 && (
           <div className="flex shrink-0 items-center gap-2 border-b border-amber-400/15 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-100/90 md:px-4">
@@ -167,36 +132,39 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
           </div>
         )}
 
-        <HomeActiveProjectsStrip
-          role={user.role}
-          email={user.email}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-        />
-
-        <HomeFiltersBar
-          filters={filters}
-          onChange={setFilters}
-          matchingMode={matchingMode}
-        />
+        <HomeActiveProjectsStrip role={user.role} email={user.email} />
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <main
             id="home-vocalist-list"
             className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/5"
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-3 py-2 md:px-4">
-              <h2 className="text-vox-label normal-case tracking-normal text-zinc-400">
-                {listHeading}
-              </h2>
-              <span className="text-[11px] tabular-nums text-zinc-600">{listCountLabel}</span>
+            <div className="shrink-0 space-y-2 border-b border-white/[0.06] px-3 py-3 md:px-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-vox-label normal-case tracking-normal text-zinc-400">
+                  {listTitle}
+                </h2>
+                <span className="text-[11px] tabular-nums text-zinc-600">{listCountLabel}</span>
+              </div>
+              <HomeDiscoverySearch
+                value={searchQuery}
+                onChange={setSearchQuery}
+                matchingMode={matchingMode}
+              />
             </div>
+
+            <HomeFiltersBar
+              filters={filters}
+              onChange={setFilters}
+              matchingMode={matchingMode}
+            />
+
             <HomeTrackList
               tracks={filteredTracks}
               selectedId={selectedTrack?.id ?? null}
               matchingMode={matchingMode}
               onSelect={handleSelect}
-              onCompare={handleCompare}
+              onCompare={matchingMode ? handleCompare : undefined}
               onViewProfile={handleViewProfile}
             />
           </main>
@@ -204,7 +172,7 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
           <HomeDetailPanel
             track={selectedTrack}
             matchingMode={matchingMode}
-            onCompare={handleCompare}
+            onCompare={matchingMode ? handleCompare : undefined}
           />
         </div>
       </div>

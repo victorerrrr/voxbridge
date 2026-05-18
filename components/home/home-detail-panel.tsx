@@ -5,13 +5,16 @@ import { RequestVocalistButton } from "@/components/request-vocalist-button";
 import { FakeWaveform } from "@/components/home/fake-waveform";
 import { useHomeAudio } from "@/components/home/home-audio-provider";
 import { getAvatarGradient, getVocalistInitials, getVocalistMatchReasons } from "@/lib/matching";
+import { ExternalLinksDisplay } from "@/components/external-links-section";
 import { getVocalistById } from "@/lib/mockVocalists";
+import { hasExternalLinks } from "@/lib/external-links";
+import { getVocalistProfileById } from "@/lib/vocalist-profile";
 import { toHomeAudioTrack, type HomeWorkspaceTrack } from "@/lib/home-tracks";
 
 type HomeDetailPanelProps = {
   track: HomeWorkspaceTrack | null;
   matchingMode: boolean;
-  onCompare: (track: HomeWorkspaceTrack) => void;
+  onCompare?: (track: HomeWorkspaceTrack) => void;
 };
 
 export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPanelProps) {
@@ -32,13 +35,20 @@ export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPa
         <p className="text-sm text-zinc-500">
           {matchingMode
             ? "Select a match to preview AI vs real vocal, compare takes, and request a vocalist."
-            : "Select a vocalist to preview their demo, view profile details, and send a request."}
+            : "Select a vocalist to preview their voice."}
         </p>
       </aside>
     );
   }
 
   const vocalist = getVocalistById(track.vocalistId);
+  const storedProfile = getVocalistProfileById(track.vocalistId);
+  const externalLinks = storedProfile?.externalLinks;
+  const demos = storedProfile?.demos?.length
+    ? storedProfile.demos
+    : vocalist
+      ? [{ id: "main", trackName: "Main demo", description: "", fileName: vocalist.demoUrl }]
+      : [];
   const reasons = matchingMode && vocalist ? getVocalistMatchReasons(vocalist) : [];
   const initials = getVocalistInitials(track.vocalistName);
   const gradient = getAvatarGradient(track.vocalistId);
@@ -151,6 +161,32 @@ export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPa
 
         <p className="mb-4 text-sm leading-relaxed text-zinc-400">{track.description}</p>
 
+        {!matchingMode && demos.length > 0 && (
+          <ul className="mb-4 space-y-1.5">
+            <li className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">Demos</li>
+            {demos.slice(0, 3).map((demo) => (
+              <li key={demo.id}>
+                <button
+                  type="button"
+                  onClick={() => playTrack(toHomeAudioTrack(track), "vocal")}
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-left text-xs text-zinc-300 transition hover:border-cyan-400/30"
+                >
+                  {demo.trackName}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!matchingMode && hasExternalLinks(externalLinks) && (
+          <div className="mb-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+              Links
+            </p>
+            <ExternalLinksDisplay links={externalLinks} />
+          </div>
+        )}
+
         {matchingMode && reasons.length > 0 && (
           <ul className="mb-4 space-y-2">
             <li className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
@@ -188,7 +224,7 @@ export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPa
             vocalistName={track.vocalistName}
             className="w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-[0_0_28px_rgba(168,85,247,0.25)]"
           />
-          {matchingMode && (
+          {matchingMode && onCompare && (
             <AnimatedButton
               type="button"
               variant="secondary"

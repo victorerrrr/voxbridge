@@ -2,8 +2,10 @@
 
 import { FakeWaveform } from "@/components/home/fake-waveform";
 import { useHomeAudio } from "@/components/home/home-audio-provider";
+import { useAiVocalExists } from "@/lib/hooks/use-upload-context";
 
 export function HomeMiniPlayer() {
+  const matchingMode = useAiVocalExists();
   const {
     track,
     isPlaying,
@@ -49,33 +51,37 @@ export function HomeMiniPlayer() {
           <p className="truncate text-xs text-zinc-500">{sideLabel}</p>
         </div>
 
-        <div className="inline-flex shrink-0 rounded-xl border border-white/10 bg-black/50 p-1 backdrop-blur-sm">
-          <SideToggle
-            active={activeSide === "ai"}
-            onClick={() => setActiveSide("ai")}
-            label="AI"
-            activeClass="bg-purple-500/30 text-white ring-1 ring-purple-400/40"
-          />
-          <SideToggle
-            active={activeSide === "vocal"}
-            onClick={() => setActiveSide("vocal")}
-            label="Vocal"
-            activeClass="bg-cyan-500/25 text-white ring-1 ring-cyan-400/40"
-          />
-        </div>
+        {matchingMode && (
+          <>
+            <div className="inline-flex shrink-0 rounded-xl border border-white/10 bg-black/50 p-1 backdrop-blur-sm">
+              <SideToggle
+                active={activeSide === "ai"}
+                onClick={() => setActiveSide("ai")}
+                label="AI"
+                activeClass="bg-purple-500/30 text-white ring-1 ring-purple-400/40"
+              />
+              <SideToggle
+                active={activeSide === "vocal"}
+                onClick={() => setActiveSide("vocal")}
+                label="Real"
+                activeClass="bg-cyan-500/25 text-white ring-1 ring-cyan-400/40"
+              />
+            </div>
 
-        <button
-          type="button"
-          onClick={toggleAbCompare}
-          className={`hidden shrink-0 rounded-xl border px-3.5 py-2 text-xs font-semibold uppercase tracking-wide transition-all duration-300 sm:block ${
-            abCompare
-              ? "border-amber-400/45 bg-amber-500/15 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.25)]"
-              : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
-          }`}
-          aria-pressed={abCompare}
-        >
-          A/B
-        </button>
+            <button
+              type="button"
+              onClick={toggleAbCompare}
+              className={`hidden shrink-0 rounded-xl border px-3.5 py-2 text-xs font-semibold uppercase tracking-wide transition-all duration-300 sm:block ${
+                abCompare
+                  ? "border-amber-400/45 bg-amber-500/15 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.25)]"
+                  : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
+              }`}
+              aria-pressed={abCompare}
+            >
+              A/B
+            </button>
+          </>
+        )}
       </div>
     </footer>
   );

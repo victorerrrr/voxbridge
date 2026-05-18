@@ -17,7 +17,7 @@ type HomeTrackListProps = {
   selectedId: string | null;
   matchingMode: boolean;
   onSelect: (track: HomeWorkspaceTrack) => void;
-  onCompare: (track: HomeWorkspaceTrack) => void;
+  onCompare?: (track: HomeWorkspaceTrack) => void;
   onViewProfile: (track: HomeWorkspaceTrack) => void;
 };
 
@@ -116,8 +116,15 @@ export function HomeTrackList({
                     {row.tags.slice(0, matchingMode ? 2 : 3).map((tag) => (
                       <TagChip key={tag} label={tag} />
                     ))}
+                    {!matchingMode &&
+                      row.languages.slice(0, 2).map((lang) => <TagChip key={lang} label={lang} />)}
                     {!matchingMode && <TagChip label={row.mood} accent />}
                   </div>
+                  {!matchingMode && (
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      From ${row.priceUsd} · {row.deliveryDays}d delivery
+                    </p>
+                  )}
                   {matchingMode && matchReasons.length > 0 && (
                     <p className="mt-1 truncate text-[11px] text-cyan-400/80">
                       {matchReasons.join(" · ")}
@@ -133,7 +140,7 @@ export function HomeTrackList({
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
-                    {matchingMode && (
+                    {matchingMode && onCompare && (
                       <HoverAction label="Compare" onClick={() => onCompare(row)}>
                         Compare
                       </HoverAction>

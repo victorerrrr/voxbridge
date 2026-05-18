@@ -1,6 +1,9 @@
 "use client";
 
-const STORAGE_KEY = "voxbridge_upload_context";
+/** localStorage key for producer AI vocal / brief (conceptual: aiVocal). */
+export const AI_VOCAL_STORAGE_KEY = "voxbridge_upload_context";
+
+const STORAGE_KEY = AI_VOCAL_STORAGE_KEY;
 
 export type UploadContext = {
   fileName: string;
@@ -16,12 +19,36 @@ export type UploadContext = {
   youtubeUrl: string;
   sunoUrl: string;
   savedAt: string;
+  /** Set when a real AI vocal file was uploaded (optional explicit flag). */
+  hasAiVocalFile?: boolean;
 };
 
 const listeners = new Set<() => void>();
 
 let cachedRaw: string | null | undefined;
 let cachedSnapshot: UploadContext | null = null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseStoredContext(raw: string): UploadContext | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    return parsed as UploadContext;
+  } catch {
+    return null;
+  }
+}
+
+/** True only when a real AI vocal upload is present — never for empty objects or vibe-only briefs. */
+export function isAiVocalActive(ctx: UploadContext | null | undefined): boolean {
+  if (!ctx || !isRecord(ctx)) return false;
+  if (ctx.hasAiVocalFile === true) return true;
+  const fileName = typeof ctx.fileName === "string" ? ctx.fileName.trim() : "";
+  return fileName.length > 0;
+}
 
 function syncUploadSnapshot(): UploadContext | null {
   if (typeof window === "undefined") return null;
@@ -35,12 +62,7 @@ function syncUploadSnapshot(): UploadContext | null {
     return cachedSnapshot;
   }
 
-  try {
-    cachedSnapshot = JSON.parse(raw) as UploadContext;
-  } catch {
-    cachedSnapshot = null;
-  }
-
+  cachedSnapshot = parseStoredContext(raw);
   return cachedSnapshot;
 }
 
@@ -72,7 +94,13 @@ export const defaultUploadContext = (): UploadContext => ({
 export function saveUploadContext(context: UploadContext): void {
   if (typeof window === "undefined") return;
 
-  const next: UploadContext = { ...context, savedAt: new Date().toISOString() };
+  const fileName = context.fileName?.trim() ?? "";
+  const next: UploadContext = {
+    ...context,
+    fileName,
+    hasAiVocalFile: fileName.length > 0,
+    savedAt: new Date().toISOString(),
+  };
   const raw = JSON.stringify(next);
   window.localStorage.setItem(STORAGE_KEY, raw);
   cachedRaw = raw;
@@ -80,14 +108,19 @@ export function saveUploadContext(context: UploadContext): void {
   emitUploadChange();
 }
 
+/** Raw brief from storage (may exist without an AI vocal file). */
 export function getUploadContext(): UploadContext | null {
   return syncUploadSnapshot();
 }
 
-/** True when the user uploaded an AI vocal file (not describe-only). */
-export function hasAiVocalUpload(): boolean {
+/** aiVocal: null when cleared/missing/invalid; object only when matching mode applies. */
+export function getAiVocal(): UploadContext | null {
   const ctx = getUploadContext();
-  return Boolean(ctx?.fileName?.trim());
+  return isAiVocalActive(ctx) ? ctx : null;
+}
+
+export function hasAiVocalUpload(): boolean {
+  return getAiVocal() !== null;
 }
 
 export function clearUploadContext(): void {

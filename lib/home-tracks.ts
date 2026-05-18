@@ -16,6 +16,12 @@ const TRACK_NAMES = [
 const MOODS = ["Warm", "Energetic", "Cinematic", "Dreamy", "Dark", "Uplifting"] as const;
 export type HomeTrackMood = (typeof MOODS)[number];
 
+const LOCATION_LANGUAGES: Record<string, string[]> = {
+  DE: ["English", "German"],
+  PL: ["English", "Polish"],
+  RS: ["English", "Serbian"],
+};
+
 export type HomeWorkspaceTrack = {
   id: string;
   vocalistId: string;
@@ -25,6 +31,10 @@ export type HomeWorkspaceTrack = {
   genres: string[];
   voiceType: string;
   mood: HomeTrackMood;
+  languages: string[];
+  priceUsd: number;
+  deliveryDays: number;
+  location: string;
   match: number;
   trendingScore: number;
   createdAt: number;
@@ -36,6 +46,11 @@ export type HomeWorkspaceTrack = {
   aiUrl: string;
   vocalUrl: string;
 };
+
+function languagesFromLocation(location: string): string[] {
+  const code = location.split(",").pop()?.trim().toUpperCase() ?? "";
+  return LOCATION_LANGUAGES[code] ?? ["English"];
+}
 
 function voiceTypeFromTags(tags: string[]): string {
   const gender = tags.find((t) => t === "Female" || t === "Male");
@@ -66,6 +81,10 @@ function trackFromVocalist(vocalist: Vocalist, index: number): HomeWorkspaceTrac
     genres: vocalist.genres,
     voiceType: voiceTypeFromTags(vocalist.tags),
     mood: moodFromVocalist(vocalist, index),
+    languages: languagesFromLocation(vocalist.location),
+    priceUsd: vocalist.priceUsd,
+    deliveryDays: vocalist.deliveryDays,
+    location: vocalist.location,
     match: vocalist.match,
     trendingScore,
     createdAt,
@@ -97,10 +116,6 @@ export function buildHomeWorkspaceTracks(matchingMode: boolean): HomeWorkspaceTr
   return matchingMode ? buildMatchingTracks() : buildExploreTracks();
 }
 
-export function buildTracksFromVocalists(vocalists: Vocalist[]): HomeWorkspaceTrack[] {
-  return vocalists.map((v, i) => trackFromVocalist(v, i));
-}
-
 export function getTrackMatchReasons(track: HomeWorkspaceTrack): string[] {
   const vocalist = mockVocalists.find((v) => v.id === track.vocalistId);
   return vocalist ? getVocalistMatchReasons(vocalist) : [];
@@ -117,11 +132,14 @@ export function filterTracksBySearch<T extends HomeWorkspaceTrack>(
     const haystack = [
       t.vocalistName,
       t.trackName,
+      t.tagline,
       ...t.genres,
       ...t.tags,
+      ...t.languages,
       t.voiceType,
       t.mood,
       t.description,
+      t.location,
     ]
       .join(" ")
       .toLowerCase();
@@ -145,15 +163,28 @@ export const HOME_VOICE_OPTIONS = [
 
 export const HOME_MOOD_OPTIONS = ["All", ...MOODS] as const;
 
+export const HOME_LANGUAGE_OPTIONS = [
+  "All",
+  ...Array.from(new Set(mockVocalists.flatMap((v) => languagesFromLocation(v.location)))),
+];
+
+export const HOME_PRICE_OPTIONS = ["All", "Under $150", "$150–$180", "$180+"] as const;
+
+export const HOME_DELIVERY_OPTIONS = ["All", "1–4 days", "5+ days"] as const;
+
 export type HomeSortMode = "new" | "match" | "trending";
 
 export function toHomeAudioTrack(track: HomeWorkspaceTrack) {
   return {
     id: track.id,
-    title: track.trackName,
+    title: matchingTitle(track),
     aiLabel: track.aiLabel,
     vocalLabel: track.vocalLabel,
     aiUrl: track.aiUrl,
     vocalUrl: track.vocalUrl,
   };
+}
+
+function matchingTitle(track: HomeWorkspaceTrack): string {
+  return track.vocalistName;
 }
