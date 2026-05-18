@@ -19,6 +19,8 @@ export function HomeMiniPlayer() {
   if (!track) return null;
 
   const sideLabel = activeSide === "ai" ? track.aiLabel : track.vocalLabel;
+  const hasDualPreview = Boolean(track.aiUrl && track.vocalUrl);
+  const showAbControls = matchingMode || hasDualPreview;
 
   return (
     <footer className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-zinc-950/90 px-3 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:pl-24 md:pr-6 md:py-3.5">
@@ -51,7 +53,7 @@ export function HomeMiniPlayer() {
           <p className="truncate text-xs text-zinc-500">{sideLabel}</p>
         </div>
 
-        {matchingMode && (
+        {showAbControls && (
           <>
             <div className="inline-flex shrink-0 rounded-xl border border-white/10 bg-black/50 p-1 backdrop-blur-sm">
               <SideToggle

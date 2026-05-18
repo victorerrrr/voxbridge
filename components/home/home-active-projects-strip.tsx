@@ -17,6 +17,7 @@ import { useEffect, useMemo } from "react";
 type HomeActiveProjectsStripProps = {
   role: UserRole;
   email: string;
+  compact?: boolean;
 };
 
 export function useHomeActiveProjects(role: UserRole, email: string) {
@@ -46,10 +47,31 @@ function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string 
     : order.producerName ?? "Producer";
 }
 
-export function HomeActiveProjectsStrip({ role, email }: HomeActiveProjectsStripProps) {
+export function HomeActiveProjectsStrip({
+  role,
+  email,
+  compact = false,
+}: HomeActiveProjectsStripProps) {
   const projects = useHomeActiveProjects(role, email);
 
   if (projects.length === 0) return null;
+
+  if (compact) {
+    return (
+      <section className="shrink-0 border-t border-white/[0.06] px-5 py-8 md:px-8">
+        <div className="mx-auto max-w-5xl">
+          <h2 className="text-vox-label mb-3 normal-case tracking-normal text-zinc-600">
+            Continue working
+          </h2>
+          <ul className="flex gap-2 overflow-x-auto pb-1">
+            {projects.map((order) => (
+              <CompactProjectCard key={order.id} order={order} role={role} />
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="shrink-0 border-b border-white/[0.06] px-3 py-2.5 md:px-4">
@@ -87,5 +109,34 @@ export function HomeActiveProjectsStrip({ role, email }: HomeActiveProjectsStrip
         })}
       </ul>
     </section>
+  );
+}
+
+function CompactProjectCard({
+  order,
+  role,
+}: {
+  order: ProducerOrder;
+  role: UserRole;
+}) {
+  const statusLabel = getHomeOrderStatusLabel(order.status);
+  const workspaceHref =
+    role === "vocalist" ? vocalistWorkspaceUrl(order.id) : `/workspace/${order.id}`;
+  const title = order.projectName || order.trackName;
+
+  return (
+    <li className="flex w-[min(100%,12rem)] shrink-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-zinc-900/40 px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-white">{title}</p>
+        <p className="truncate text-[11px] text-zinc-500">{statusLabel}</p>
+      </div>
+      <AnimatedButton
+        href={workspaceHref}
+        variant="secondary"
+        className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium"
+      >
+        Open
+      </AnimatedButton>
+    </li>
   );
 }
