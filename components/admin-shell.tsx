@@ -27,6 +27,11 @@ const ADMIN_NAV = [
   { key: "messages", label: "Messages", href: "/admin/messages" },
   { key: "reports", label: "Reports", href: "/admin/reports" },
   { key: "moderation", label: "Content Moderation", href: "/admin/moderation" },
+  {
+    key: "ai-voice-matching",
+    label: "AI Voice Lab",
+    href: "/admin/ai-voice-matching",
+  },
   { key: "settings", label: "Settings", href: "/admin/settings" },
 ] as const;
 
