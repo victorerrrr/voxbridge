@@ -18,6 +18,7 @@ export type HomeListFilters = {
 type HomeFiltersBarProps = {
   filters: HomeListFilters;
   onChange: (next: HomeListFilters) => void;
+  matchingMode?: boolean;
 };
 
 const SORT_OPTIONS: { value: HomeSortMode; label: string }[] = [
@@ -26,7 +27,10 @@ const SORT_OPTIONS: { value: HomeSortMode; label: string }[] = [
   { value: "trending", label: "Trending" },
 ];
 
-export function HomeFiltersBar({ filters, onChange }: HomeFiltersBarProps) {
+export function HomeFiltersBar({ filters, onChange, matchingMode = false }: HomeFiltersBarProps) {
+  const sortOptions = matchingMode
+    ? SORT_OPTIONS
+    : SORT_OPTIONS.filter((opt) => opt.value !== "match");
   return (
     <div className="shrink-0 border-b border-white/10 bg-zinc-950/60 px-2 py-2 backdrop-blur-md md:px-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -55,7 +59,7 @@ export function HomeFiltersBar({ filters, onChange }: HomeFiltersBarProps) {
           <span className="mr-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
             Sort
           </span>
-          {SORT_OPTIONS.map((opt) => (
+          {sortOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"

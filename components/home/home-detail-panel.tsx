@@ -10,10 +10,11 @@ import { toHomeAudioTrack, type HomeWorkspaceTrack } from "@/lib/home-tracks";
 
 type HomeDetailPanelProps = {
   track: HomeWorkspaceTrack | null;
+  matchingMode: boolean;
   onCompare: (track: HomeWorkspaceTrack) => void;
 };
 
-export function HomeDetailPanel({ track, onCompare }: HomeDetailPanelProps) {
+export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPanelProps) {
   const {
     playTrack,
     track: playing,
@@ -29,14 +30,16 @@ export function HomeDetailPanel({ track, onCompare }: HomeDetailPanelProps) {
       <aside className="hidden w-full shrink-0 flex-col border-l border-white/10 bg-zinc-950/30 p-6 backdrop-blur-xl lg:flex lg:w-[22rem] xl:w-[26rem]">
         <FakeWaveform active bars={32} className="mb-4 h-12 w-full opacity-50" />
         <p className="text-sm text-zinc-500">
-          Select a track to preview AI vs real vocal, compare takes, and request a vocalist.
+          {matchingMode
+            ? "Select a match to preview AI vs real vocal, compare takes, and request a vocalist."
+            : "Select a vocalist to preview their demo, view profile details, and send a request."}
         </p>
       </aside>
     );
   }
 
   const vocalist = getVocalistById(track.vocalistId);
-  const reasons = vocalist ? getVocalistMatchReasons(vocalist) : [];
+  const reasons = matchingMode && vocalist ? getVocalistMatchReasons(vocalist) : [];
   const initials = getVocalistInitials(track.vocalistName);
   const gradient = getAvatarGradient(track.vocalistId);
   const isPlayingThis = playing?.id === track.id && isPlaying;
@@ -52,12 +55,14 @@ export function HomeDetailPanel({ track, onCompare }: HomeDetailPanelProps) {
             <span className="inline-flex h-14 w-14 items-center justify-center rounded-xl border border-white/20 bg-black/30 text-xl font-bold text-white backdrop-blur-sm">
               {initials}
             </span>
-            <MatchRing match={track.match} className="absolute -right-1 -top-1" />
+            {matchingMode && <MatchRing match={track.match} className="absolute -right-1 -top-1" />}
           </div>
           <h2 className="relative mt-4 text-2xl font-bold tracking-tight text-white">
-            {track.trackName}
+            {track.vocalistName}
           </h2>
-          <p className="relative mt-1 text-sm text-white/75">{track.vocalistName}</p>
+          <p className="relative mt-1 text-sm text-white/75">
+            {matchingMode ? track.trackName : track.tagline}
+          </p>
           <div className="relative mt-3 flex flex-wrap gap-1.5">
             {track.genres.slice(0, 2).map((g) => (
               <span
@@ -73,58 +78,80 @@ export function HomeDetailPanel({ track, onCompare }: HomeDetailPanelProps) {
           </div>
         </div>
 
-        <div className="mb-4 rounded-xl border border-white/10 bg-black/30 p-3 backdrop-blur-md">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-              Preview
-            </span>
-            <div className="inline-flex rounded-lg border border-white/10 bg-zinc-950/80 p-0.5">
-              <TogglePill
-                active={activeSide === "ai"}
-                onClick={() => setActiveSide("ai")}
-                label="AI"
-                accent="purple"
+        {matchingMode ? (
+          <div className="mb-4 rounded-xl border border-white/10 bg-black/30 p-3 backdrop-blur-md">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                Preview
+              </span>
+              <div className="inline-flex rounded-lg border border-white/10 bg-zinc-950/80 p-0.5">
+                <TogglePill
+                  active={activeSide === "ai"}
+                  onClick={() => setActiveSide("ai")}
+                  label="AI"
+                  accent="purple"
+                />
+                <TogglePill
+                  active={activeSide === "vocal"}
+                  onClick={() => setActiveSide("vocal")}
+                  label="Real"
+                  accent="cyan"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <PreviewLane
+                label="AI vocal"
+                active={isPlayingThis && activeSide === "ai"}
+                variant="ai"
+                onPlay={() => playTrack(toHomeAudioTrack(track), "ai")}
               />
-              <TogglePill
-                active={activeSide === "vocal"}
-                onClick={() => setActiveSide("vocal")}
-                label="Real"
-                accent="cyan"
+              <PreviewLane
+                label="Real vocal"
+                active={isPlayingThis && activeSide === "vocal"}
+                variant="vocal"
+                onPlay={() => playTrack(toHomeAudioTrack(track), "vocal")}
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <PreviewLane
-              label="AI vocal"
-              active={isPlayingThis && activeSide === "ai"}
-              variant="ai"
-              onPlay={() => playTrack(toHomeAudioTrack(track), "ai")}
-            />
-            <PreviewLane
-              label="Real vocal"
-              active={isPlayingThis && activeSide === "vocal"}
-              variant="vocal"
-              onPlay={() => playTrack(toHomeAudioTrack(track), "vocal")}
-            />
+            <button
+              type="button"
+              onClick={toggleAbCompare}
+              className={`mt-3 w-full rounded-lg border py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                abCompare
+                  ? "border-amber-400/45 bg-amber-500/15 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.2)]"
+                  : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
+              }`}
+            >
+              A/B Compare
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={toggleAbCompare}
-            className={`mt-3 w-full rounded-lg border py-2 text-xs font-semibold uppercase tracking-wide transition ${
-              abCompare
-                ? "border-amber-400/45 bg-amber-500/15 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.2)]"
-                : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
-            }`}
-          >
-            A/B Compare
-          </button>
-        </div>
+        ) : (
+          <div className="mb-4 rounded-xl border border-white/10 bg-black/30 p-3 backdrop-blur-md">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              Demo preview
+            </span>
+            <button
+              type="button"
+              onClick={() => playTrack(toHomeAudioTrack(track), "vocal")}
+              className="mt-2 w-full rounded-lg border border-white/10 bg-black/25 p-3 text-left transition hover:border-cyan-400/35"
+            >
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Real vocal sample</p>
+              <FakeWaveform
+                active={isPlayingThis}
+                variant="vocal"
+                bars={18}
+                size="sm"
+                className="mt-2 h-9"
+              />
+            </button>
+          </div>
+        )}
 
         <p className="mb-4 text-sm leading-relaxed text-zinc-400">{track.description}</p>
 
-        {reasons.length > 0 && (
+        {matchingMode && reasons.length > 0 && (
           <ul className="mb-4 space-y-2">
             <li className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
               Why it matches
@@ -161,14 +188,16 @@ export function HomeDetailPanel({ track, onCompare }: HomeDetailPanelProps) {
             vocalistName={track.vocalistName}
             className="w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-[0_0_28px_rgba(168,85,247,0.25)]"
           />
-          <AnimatedButton
-            type="button"
-            variant="secondary"
-            onClick={() => onCompare(track)}
-            className="w-full rounded-xl px-4 py-2.5 text-sm"
-          >
-            Compare takes
-          </AnimatedButton>
+          {matchingMode && (
+            <AnimatedButton
+              type="button"
+              variant="secondary"
+              onClick={() => onCompare(track)}
+              className="w-full rounded-xl px-4 py-2.5 text-sm"
+            >
+              Compare takes
+            </AnimatedButton>
+          )}
           <AnimatedButton
             href={`/vocalists/${track.vocalistId}`}
             variant="secondary"

@@ -1,14 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { FakeWaveform } from "@/components/home/fake-waveform";
 import { useHomeAudio } from "@/components/home/home-audio-provider";
 import { getSavedVocalistIds, toggleSavedVocalist } from "@/components/home/saved-vocalists";
-import { toHomeAudioTrack, type HomeWorkspaceTrack } from "@/lib/home-tracks";
+import { createProducerOrder } from "@/lib/orders";
+import {
+  getTrackMatchReasons,
+  toHomeAudioTrack,
+  type HomeWorkspaceTrack,
+} from "@/lib/home-tracks";
 
 type HomeTrackListProps = {
   tracks: HomeWorkspaceTrack[];
   selectedId: string | null;
+  matchingMode: boolean;
   onSelect: (track: HomeWorkspaceTrack) => void;
   onCompare: (track: HomeWorkspaceTrack) => void;
   onViewProfile: (track: HomeWorkspaceTrack) => void;
@@ -17,10 +24,12 @@ type HomeTrackListProps = {
 export function HomeTrackList({
   tracks,
   selectedId,
+  matchingMode,
   onSelect,
   onCompare,
   onViewProfile,
 }: HomeTrackListProps) {
+  const router = useRouter();
   const { playTrack, track: playing, isPlaying, selectedTrackId, activeSide } = useHomeAudio();
   const [savedIds, setSavedIds] = useState<string[]>(() => getSavedVocalistIds());
 
@@ -28,8 +37,14 @@ export function HomeTrackList({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
         <FakeWaveform active bars={24} variant="neutral" className="h-10 w-40 opacity-60" />
-        <p className="text-sm text-zinc-400">No tracks match your filters.</p>
-        <p className="text-xs text-zinc-600">Try another genre, mood, or switch to All tracks.</p>
+        <p className="text-sm text-zinc-400">
+          {matchingMode ? "No matches for your filters." : "No vocalists match your search."}
+        </p>
+        <p className="text-xs text-zinc-600">
+          {matchingMode
+            ? "Try another genre, mood, or switch to All tracks."
+            : "Try a different name, genre, or tag."}
+        </p>
       </div>
     );
   }
@@ -43,6 +58,8 @@ export function HomeTrackList({
           const isSaved = savedIds.includes(row.vocalistId);
           const waveformVariant =
             isRowPlaying && playing?.id === row.id ? activeSide : "neutral";
+          const matchReasons = matchingMode ? getTrackMatchReasons(row) : [];
+          const previewSide = matchingMode ? "ai" : "vocal";
 
           return (
             <li key={row.id}>
@@ -71,7 +88,7 @@ export function HomeTrackList({
 
                 <PlayButton
                   isPlaying={isRowPlaying}
-                  onClick={() => playTrack(toHomeAudioTrack(row), "ai")}
+                  onClick={() => playTrack(toHomeAudioTrack(row), previewSide)}
                 />
 
                 <FakeWaveform
@@ -84,32 +101,43 @@ export function HomeTrackList({
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-bold tracking-tight text-white md:text-base">
-                    {row.trackName}
+                    {row.vocalistName}
                   </p>
-                  <p className="truncate text-xs text-zinc-500">{row.vocalistName}</p>
+                  {!matchingMode && row.tagline && (
+                    <p className="truncate text-xs text-zinc-500">{row.tagline}</p>
+                  )}
+                  {matchingMode && (
+                    <p className="truncate text-xs text-zinc-500">{row.trackName}</p>
+                  )}
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {row.genres.slice(0, 2).map((genre) => (
                       <TagChip key={genre} label={genre} />
                     ))}
-                    <TagChip label={row.mood} accent />
+                    {row.tags.slice(0, matchingMode ? 2 : 3).map((tag) => (
+                      <TagChip key={tag} label={tag} />
+                    ))}
+                    {!matchingMode && <TagChip label={row.mood} accent />}
                   </div>
-                  <p className="mt-1 hidden truncate text-[11px] text-zinc-600 group-hover:text-zinc-500 md:block">
-                    {row.description.slice(0, 72)}
-                    {row.description.length > 72 ? "…" : ""}
-                  </p>
+                  {matchingMode && matchReasons.length > 0 && (
+                    <p className="mt-1 truncate text-[11px] text-cyan-400/80">
+                      {matchReasons.join(" · ")}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <MatchBadge match={row.match} active={isActive} />
+                  {matchingMode && <MatchBadge match={row.match} active={isActive} />}
 
                   <div
                     className="flex items-center gap-0.5 opacity-0 transition-all duration-200 group-hover:opacity-100 md:gap-1"
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
-                    <HoverAction label="Compare" onClick={() => onCompare(row)}>
-                      Compare
-                    </HoverAction>
+                    {matchingMode && (
+                      <HoverAction label="Compare" onClick={() => onCompare(row)}>
+                        Compare
+                      </HoverAction>
+                    )}
                     <HoverAction
                       label={isSaved ? "Saved" : "Save"}
                       onClick={() => setSavedIds(toggleSavedVocalist(row.vocalistId))}
@@ -120,6 +148,17 @@ export function HomeTrackList({
                     <HoverAction label="Open" onClick={() => onViewProfile(row)}>
                       Open
                     </HoverAction>
+                    {!matchingMode && (
+                      <HoverAction
+                        label="Request vocalist"
+                        onClick={() => {
+                          const order = createProducerOrder(row.vocalistId, row.vocalistName);
+                          router.push(`/workspace/${order.id}`);
+                        }}
+                      >
+                        Request
+                      </HoverAction>
+                    )}
                   </div>
                 </div>
               </article>

@@ -1,6 +1,6 @@
 import type { Vocalist } from "@/lib/mockVocalists";
 import { mockVocalists } from "@/lib/mockVocalists";
-import { getRankedVocalists } from "@/lib/matching";
+import { getRankedVocalists, getVocalistMatchReasons } from "@/lib/matching";
 
 const AI_DEMO_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3";
 
@@ -21,6 +21,7 @@ export type HomeWorkspaceTrack = {
   vocalistId: string;
   trackName: string;
   vocalistName: string;
+  tagline: string;
   genres: string[];
   voiceType: string;
   mood: HomeTrackMood;
@@ -61,6 +62,7 @@ function trackFromVocalist(vocalist: Vocalist, index: number): HomeWorkspaceTrac
     vocalistId: vocalist.id,
     trackName,
     vocalistName: vocalist.name,
+    tagline: vocalist.tagline,
     genres: vocalist.genres,
     voiceType: voiceTypeFromTags(vocalist.tags),
     mood: moodFromVocalist(vocalist, index),
@@ -77,12 +79,54 @@ function trackFromVocalist(vocalist: Vocalist, index: number): HomeWorkspaceTrac
   };
 }
 
-export function buildHomeWorkspaceTracks(): HomeWorkspaceTrack[] {
+/** Explore mode: browse vocalists without AI match scores. */
+export function buildExploreTracks(): HomeWorkspaceTrack[] {
+  const vocalists = [...mockVocalists].sort((a, b) => a.name.localeCompare(b.name));
+  return vocalists.map((v, i) => {
+    const track = trackFromVocalist({ ...v, match: 0 }, i);
+    return { ...track, trackName: v.name };
+  });
+}
+
+/** Matching mode: ranked vocalists after AI vocal upload. */
+export function buildMatchingTracks(): HomeWorkspaceTrack[] {
   return getRankedVocalists().map((v, i) => trackFromVocalist(v, i));
+}
+
+export function buildHomeWorkspaceTracks(matchingMode: boolean): HomeWorkspaceTrack[] {
+  return matchingMode ? buildMatchingTracks() : buildExploreTracks();
 }
 
 export function buildTracksFromVocalists(vocalists: Vocalist[]): HomeWorkspaceTrack[] {
   return vocalists.map((v, i) => trackFromVocalist(v, i));
+}
+
+export function getTrackMatchReasons(track: HomeWorkspaceTrack): string[] {
+  const vocalist = mockVocalists.find((v) => v.id === track.vocalistId);
+  return vocalist ? getVocalistMatchReasons(vocalist) : [];
+}
+
+export function filterTracksBySearch<T extends HomeWorkspaceTrack>(
+  tracks: T[],
+  query: string
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return tracks;
+
+  return tracks.filter((t) => {
+    const haystack = [
+      t.vocalistName,
+      t.trackName,
+      ...t.genres,
+      ...t.tags,
+      t.voiceType,
+      t.mood,
+      t.description,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
 }
 
 export const HOME_GENRE_OPTIONS = [

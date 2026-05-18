@@ -84,6 +84,12 @@ export function getUploadContext(): UploadContext | null {
   return syncUploadSnapshot();
 }
 
+/** True when the user uploaded an AI vocal file (not describe-only). */
+export function hasAiVocalUpload(): boolean {
+  const ctx = getUploadContext();
+  return Boolean(ctx?.fileName?.trim());
+}
+
 export function clearUploadContext(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);

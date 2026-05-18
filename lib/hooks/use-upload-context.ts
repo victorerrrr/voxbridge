@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   getUploadContext,
+  hasAiVocalUpload,
   subscribeUploadContext,
   type UploadContext,
 } from "@/lib/upload-context";
@@ -17,4 +18,16 @@ export function useUploadContext(): UploadContext | null {
   }, []);
 
   return context;
+}
+
+export function useAiVocalExists(): boolean {
+  const [exists, setExists] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setExists(hasAiVocalUpload());
+    sync();
+    return subscribeUploadContext(sync);
+  }, []);
+
+  return exists;
 }
