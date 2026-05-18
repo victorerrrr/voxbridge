@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loginStoredUser } from "@/lib/auth";
+import { isAdminAccount, loginStoredUser } from "@/lib/auth";
 import PasswordInput from "@/components/password-input";
 import { AnimatedButton } from "@/components/animated-button";
 
@@ -26,7 +26,8 @@ export default function LoginPage() {
       return;
     }
 
-    window.setTimeout(() => router.push("/home"), 150);
+    const destination = result.user && isAdminAccount(result.user) ? "/admin" : "/home";
+    window.setTimeout(() => router.push(destination), 150);
   };
 
   return (

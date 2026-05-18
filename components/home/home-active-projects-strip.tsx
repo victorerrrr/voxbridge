@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { AnimatedButton } from "@/components/animated-button";
 import {
   getHomeOrderStatusLabel,
   getHomeOrderStatusStyle,
@@ -12,7 +12,7 @@ import { getActiveVocalistOrder, ensureVocalistRequestsSeeded } from "@/lib/voca
 import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
 import { getOrdersForVocalist, type ProducerOrder } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 
 export type HomeViewMode = "all" | "projects";
 
@@ -53,6 +53,12 @@ export function useHomeActiveProjects(role: UserRole, email: string) {
   }, [role, email, producerOrders]);
 }
 
+function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string {
+  return role === "producer"
+    ? `with ${order.vocalistName}`
+    : order.producerName ?? "Producer";
+}
+
 export function HomeActiveProjectsStrip({
   role,
   email,
@@ -60,7 +66,8 @@ export function HomeActiveProjectsStrip({
   onViewModeChange,
 }: HomeActiveProjectsStripProps) {
   const projects = useHomeActiveProjects(role, email);
-  const projectsHref = role === "producer" ? "/dashboard?tab=projects" : "/vocalist/orders";
+  const projectsHref = role === "producer" ? "/workspace" : "/vocalist/orders";
+  const showList = projects.length > 1;
 
   return (
     <div className="shrink-0 border-b border-white/10 bg-zinc-950/70 px-2 py-2 backdrop-blur-sm md:px-3">
@@ -76,44 +83,113 @@ export function HomeActiveProjectsStrip({
           Active projects
         </ViewTab>
 
-        {projects.length > 0 && (
+        {projects.length === 1 && (
           <div className="ml-0 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-0.5 md:ml-2">
-            {projects.slice(0, 8).map((order, index) => {
-              const statusLabel = getHomeOrderStatusLabel(order.status);
-              const workspaceHref =
-                role === "vocalist" ? vocalistWorkspaceUrl(order.id) : `/workspace/${order.id}`;
-              const gradient = PROJECT_GRADIENTS[index % PROJECT_GRADIENTS.length];
+            <ProjectChip order={projects[0]} role={role} index={0} />
+            <AnimatedButton
+              href={projectsHref}
+              variant="secondary"
+              className="h-[4.5rem] w-14 shrink-0 rounded-xl border border-dashed border-white/15 px-0 text-[11px] font-medium uppercase tracking-wide"
+            >
+              All
+            </AnimatedButton>
+          </div>
+        )}
 
-              return (
-                <Link
-                  key={order.id}
-                  href={workspaceHref}
-                  className="group relative flex h-[4.25rem] w-[9.5rem] shrink-0 flex-col justify-end overflow-hidden rounded-xl border border-white/10 p-2.5 transition hover:scale-[1.03] hover:border-purple-400/35 hover:shadow-[0_0_24px_rgba(168,85,247,0.2)]"
-                >
-                  <div
-                    className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-80 transition group-hover:opacity-100`}
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_55%)]" aria-hidden />
-                  <span className="relative z-10 line-clamp-2 text-xs font-semibold leading-tight text-white">
-                    {order.trackName}
-                  </span>
+        {projects.length > 1 && (
+          <AnimatedButton
+            href={projectsHref}
+            variant="secondary"
+            className="ml-auto rounded-full px-3 py-1.5 text-vox-meta"
+          >
+            All projects ({projects.length})
+          </AnimatedButton>
+        )}
+      </div>
+
+      {showList && (
+        <ul className="mt-2 space-y-1.5 border-t border-white/5 pt-2">
+          {projects.map((order) => {
+            const statusLabel = getHomeOrderStatusLabel(order.status);
+            const workspaceHref =
+              role === "vocalist" ? vocalistWorkspaceUrl(order.id) : `/workspace/${order.id}`;
+            const title = order.projectName || order.trackName;
+
+            return (
+              <li
+                key={order.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/8 bg-zinc-900/50 px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-white">{title}</p>
+                  <p className="truncate text-vox-meta">{projectCollaboratorLabel(order, role)}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`relative z-10 mt-1 inline-flex w-fit rounded-full border px-1.5 py-px text-[9px] uppercase tracking-wide ${getHomeOrderStatusStyle(statusLabel)}`}
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${getHomeOrderStatusStyle(statusLabel)}`}
                   >
                     {statusLabel}
                   </span>
-                </Link>
-              );
-            })}
-            <Link
-              href={projectsHref}
-              className="flex h-[4.25rem] w-14 shrink-0 items-center justify-center rounded-xl border border-dashed border-white/15 text-[10px] font-medium uppercase tracking-wide text-zinc-500 transition hover:border-purple-400/30 hover:text-zinc-300"
-            >
-              All
-            </Link>
-          </div>
-        )}
-      </div>
+                  <AnimatedButton
+                    href={workspaceHref}
+                    variant="primary"
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium"
+                  >
+                    Open workspace
+                  </AnimatedButton>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ProjectChip({
+  order,
+  role,
+  index,
+}: {
+  order: ProducerOrder;
+  role: UserRole;
+  index: number;
+}) {
+  const statusLabel = getHomeOrderStatusLabel(order.status);
+  const workspaceHref =
+    role === "vocalist" ? vocalistWorkspaceUrl(order.id) : `/workspace/${order.id}`;
+  const gradient = PROJECT_GRADIENTS[index % PROJECT_GRADIENTS.length];
+  const title = order.projectName || order.trackName;
+
+  return (
+    <div className="group relative flex h-[4.5rem] w-[10.5rem] shrink-0 flex-col justify-end overflow-hidden rounded-xl border border-white/10 p-2.5">
+      <div
+        className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-80 transition group-hover:opacity-100`}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_55%)]"
+        aria-hidden
+      />
+      <span className="relative z-10 line-clamp-2 text-sm font-medium leading-tight text-white">
+        {title}
+      </span>
+      <span className="relative z-10 mt-0.5 line-clamp-1 text-[11px] text-zinc-300">
+        {projectCollaboratorLabel(order, role)}
+      </span>
+      <span
+        className={`relative z-10 mt-1 inline-flex w-fit rounded-full border px-1.5 py-px text-[10px] uppercase tracking-wide ${getHomeOrderStatusStyle(statusLabel)}`}
+      >
+        {statusLabel}
+      </span>
+      <AnimatedButton
+        href={workspaceHref}
+        variant="primary"
+        className="relative z-10 mt-1.5 w-full rounded-md px-2 py-1 text-[11px] font-medium"
+      >
+        Open
+      </AnimatedButton>
     </div>
   );
 }
@@ -124,7 +200,7 @@ function ViewTab({
   onClick,
   badge,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   active: boolean;
   onClick: () => void;
   badge?: number;
@@ -133,15 +209,15 @@ function ViewTab({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
         active
           ? "bg-gradient-to-r from-purple-500/35 to-cyan-500/15 text-white ring-1 ring-purple-400/35 shadow-[0_0_18px_rgba(168,85,247,0.2)]"
-          : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+          : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
       }`}
     >
       {children}
       {badge !== undefined ? (
-        <span className="rounded-full bg-purple-500/30 px-1.5 py-px text-[10px] text-purple-200">
+        <span className="rounded-full bg-purple-500/30 px-1.5 py-px text-xs text-purple-200">
           {badge}
         </span>
       ) : null}

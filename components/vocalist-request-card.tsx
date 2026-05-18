@@ -22,7 +22,7 @@ export function VocalistRequestCard({ request, onAccept, onDecline }: VocalistRe
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-white">{request.projectName}</h2>
-          <p className="mt-1 text-sm text-zinc-400">from {request.producerName}</p>
+          <p className="mt-1 text-vox-meta">from {request.producerName}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RequestStatusBadge status={request.status} />

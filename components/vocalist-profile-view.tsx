@@ -4,7 +4,8 @@ import Link from "next/link";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { RequestVocalistButton } from "@/components/request-vocalist-button";
-import { getStoredUser } from "@/lib/auth";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
+import { useMounted } from "@/lib/hooks/use-mounted";
 import { getVocalistById, type Vocalist } from "@/lib/mockVocalists";
 import { getVocalistMatchReasons } from "@/lib/matching";
 import { useStoreRevision } from "@/lib/hooks/use-store-subscription";
@@ -15,6 +16,7 @@ import {
   type VocalistProfile,
 } from "@/lib/vocalist-profile";
 import { getAverageRating, getReviewsForVocalist, subscribeVocalistReviews } from "@/lib/reviews";
+import { ExternalLinksDisplay } from "@/components/external-links-section";
 
 type VocalistProfileViewProps = {
   id: string;
@@ -24,10 +26,25 @@ export function VocalistProfileView({ id }: VocalistProfileViewProps) {
   useStoreRevision(subscribeVocalistProfiles);
   useStoreRevision(subscribeVocalistReviews);
 
+  const mounted = useMounted();
   const mock = getVocalistById(id);
-  const stored = getVocalistProfileById(id);
-  const user = getStoredUser();
-  const isOwner = stored && user?.email.toLowerCase() === stored.ownerEmail.toLowerCase();
+  const stored = mounted ? getVocalistProfileById(id) : undefined;
+  const { user, isReady } = useClientAuth();
+  const isOwner =
+    isReady && stored && user?.email.toLowerCase() === stored.ownerEmail.toLowerCase();
+
+  if (!mounted) {
+    if (mock) {
+      return <MockVocalistProfile vocalist={mock} />;
+    }
+    return (
+      <InternalPageShell activeItem="explore">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center">
+          <p className="text-zinc-400">Loading profile...</p>
+        </div>
+      </InternalPageShell>
+    );
+  }
 
   if (!mock && !stored) {
     return (
@@ -86,6 +103,7 @@ function StoredVocalistProfile({
   isOwner: boolean;
   mock?: Vocalist;
 }) {
+  const { user, isReady } = useClientAuth();
   const reviews = getReviewsForVocalist(profile.id);
   const averageRating = getAverageRating(profile.id);
   const completedCount = getCompletedOrdersCount(profile.id);
@@ -126,6 +144,15 @@ function StoredVocalistProfile({
         reviews={reviews}
         averageRating={averageRating}
         studioEquipment={profile.studioEquipment}
+        recordingSetup={profile.recordingSetup}
+        voiceCharacteristics={profile.voiceCharacteristics}
+        externalLinks={
+          profile.externalLinks && Object.keys(profile.externalLinks).length > 0
+            ? profile.externalLinks
+            : isReady
+              ? user?.externalLinks
+              : undefined
+        }
         isOwner={isOwner}
       />
     </InternalPageShell>
@@ -151,6 +178,9 @@ function ProfileLayout({
   reviews,
   averageRating,
   studioEquipment,
+  recordingSetup,
+  voiceCharacteristics = [],
+  externalLinks,
   isOwner,
 }: {
   name: string;
@@ -171,6 +201,15 @@ function ProfileLayout({
   reviews: { id: string; rating: number; comment: string; producerName: string }[];
   averageRating: number | null;
   studioEquipment?: string;
+  recordingSetup?: {
+    microphone: string;
+    audioInterface: string;
+    daw: string;
+    environment: string;
+    studioSessionsAvailable: boolean | null;
+  };
+  voiceCharacteristics?: string[];
+  externalLinks?: import("@/lib/external-links").ExternalLinks;
   isOwner?: boolean;
 }) {
   return (
@@ -209,6 +248,48 @@ function ProfileLayout({
       {studioEquipment && (
         <p className="mt-2 text-sm text-zinc-500">Studio: {studioEquipment}</p>
       )}
+
+      {recordingSetup &&
+        (recordingSetup.microphone || recordingSetup.daw || recordingSetup.environment) && (
+          <section className="mt-4 rounded-xl border border-purple-400/20 bg-purple-500/5 p-4 text-sm text-zinc-300">
+            <p className="font-medium text-zinc-100">Recording setup</p>
+            <ul className="mt-2 space-y-1 text-zinc-400">
+              {recordingSetup.microphone && <li>Mic: {recordingSetup.microphone}</li>}
+              {recordingSetup.audioInterface && <li>Interface: {recordingSetup.audioInterface}</li>}
+              {recordingSetup.daw && <li>DAW: {recordingSetup.daw}</li>}
+              {recordingSetup.environment && (
+                <li>
+                  Environment:{" "}
+                  {recordingSetup.environment === "home"
+                    ? "Home studio"
+                    : recordingSetup.environment === "professional"
+                      ? "Professional studio"
+                      : "Home & professional"}
+                </li>
+              )}
+              {recordingSetup.studioSessionsAvailable != null && (
+                <li>
+                  Studio sessions: {recordingSetup.studioSessionsAvailable ? "Available" : "Not available"}
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
+
+      {voiceCharacteristics.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {voiceCharacteristics.map((trait) => (
+            <span
+              key={trait}
+              className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1 text-xs text-cyan-100"
+            >
+              {trait}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <ExternalLinksDisplay links={externalLinks} />
 
       <div className="mt-5 flex flex-wrap gap-2">
         {tags.map((tag) => (

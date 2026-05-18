@@ -1,6 +1,91 @@
 "use client";
 
+import type { ExternalLinks } from "@/lib/external-links";
+
 const STORAGE_KEY = "voxbridge_vocalist_profiles";
+
+export type RecordingEnvironment = "home" | "professional" | "both" | "";
+
+export type RecordingSetup = {
+  microphone: string;
+  audioInterface: string;
+  daw: string;
+  environment: RecordingEnvironment;
+  studioSessionsAvailable: boolean | null;
+};
+
+export const VOICE_CHARACTERISTIC_OPTIONS = [
+  "Warm",
+  "Airy",
+  "Dark",
+  "Bright",
+  "Raspy",
+  "Soft",
+  "Powerful",
+  "Emotional",
+  "Breathable",
+  "Aggressive",
+  "Smooth",
+  "Nasal",
+  "Deep",
+  "Thin",
+  "Rich",
+] as const;
+
+export const VOCAL_TYPE_OPTIONS = [
+  "Soprano",
+  "Mezzo",
+  "Alto",
+  "Tenor",
+  "Baritone",
+  "Bass",
+] as const;
+
+export const VOCAL_REGISTER_OPTIONS = ["High", "Mid", "Low", "Wide"] as const;
+
+/** @deprecated Use VOCAL_TYPE_OPTIONS — kept for legacy profile migration */
+export const MALE_VOCAL_RANGES = ["Tenor", "Baritone", "Bass"] as const;
+/** @deprecated Use VOCAL_TYPE_OPTIONS */
+export const FEMALE_VOCAL_RANGES = ["Soprano", "Mezzo-soprano", "Alto", "Mezzo"] as const;
+
+export const MICROPHONE_PRESETS = [
+  "Neumann U87",
+  "Neumann TLM 103",
+  "Shure SM7B",
+  "Shure SM58",
+  "Rode NT1",
+  "AKG C414",
+  "Audio-Technica AT4040",
+  "Other",
+] as const;
+
+export const AUDIO_INTERFACE_PRESETS = [
+  "Universal Audio Apollo",
+  "Focusrite Scarlett",
+  "Audient iD14",
+  "RME Babyface",
+  "Motu M4",
+  "Other",
+] as const;
+
+export const DAW_PRESETS = [
+  "Pro Tools",
+  "Logic Pro",
+  "Ableton Live",
+  "FL Studio",
+  "Cubase",
+  "Reaper",
+  "Studio One",
+  "Other",
+] as const;
+
+export const EMPTY_RECORDING_SETUP: RecordingSetup = {
+  microphone: "",
+  audioInterface: "",
+  daw: "",
+  environment: "",
+  studioSessionsAvailable: null,
+};
 
 export type VocalistDemo = {
   id: string;
@@ -102,10 +187,13 @@ export type VocalistProfile = {
   username: string;
   bio: string;
   voiceTones: string[];
+  voiceCharacteristics: string[];
   genres: string[];
   languages: string[];
   vocalRange: string;
   studioEquipment: string;
+  recordingSetup: RecordingSetup;
+  externalLinks: ExternalLinks;
   demos: VocalistDemo[];
   tags: VocalistTags;
   onboardingComplete: boolean;
@@ -122,6 +210,15 @@ let cachedSnapshot: VocalistProfile[] = EMPTY_PROFILES;
 
 function emitChange(): void {
   listeners.forEach((listener) => listener());
+}
+
+function normalizeVocalistProfile(profile: VocalistProfile): VocalistProfile {
+  return {
+    ...profile,
+    voiceCharacteristics: profile.voiceCharacteristics ?? [],
+    recordingSetup: profile.recordingSetup ?? { ...EMPTY_RECORDING_SETUP },
+    externalLinks: profile.externalLinks ?? {},
+  };
 }
 
 function sortProfiles(profiles: VocalistProfile[]): VocalistProfile[] {
@@ -144,7 +241,7 @@ function syncSnapshot(): VocalistProfile[] {
 
   try {
     const parsed = JSON.parse(raw) as VocalistProfile[];
-    const list = Array.isArray(parsed) ? parsed : [];
+    const list = Array.isArray(parsed) ? parsed.map(normalizeVocalistProfile) : [];
     cachedSnapshot = list.length === 0 ? EMPTY_PROFILES : sortProfiles(list);
   } catch {
     cachedSnapshot = EMPTY_PROFILES;
@@ -215,10 +312,13 @@ export function upsertVocalistProfile(
     username: patch.username ?? existing?.username ?? "",
     bio: patch.bio ?? existing?.bio ?? "",
     voiceTones: patch.voiceTones ?? existing?.voiceTones ?? [],
+    voiceCharacteristics: patch.voiceCharacteristics ?? existing?.voiceCharacteristics ?? [],
     genres: patch.genres ?? existing?.genres ?? [],
     languages: patch.languages ?? existing?.languages ?? [],
     vocalRange: patch.vocalRange ?? existing?.vocalRange ?? "",
     studioEquipment: patch.studioEquipment ?? existing?.studioEquipment ?? "",
+    recordingSetup: patch.recordingSetup ?? existing?.recordingSetup ?? { ...EMPTY_RECORDING_SETUP },
+    externalLinks: patch.externalLinks ?? existing?.externalLinks ?? {},
     demos: patch.demos ?? existing?.demos ?? [],
     tags: patch.tags ?? existing?.tags ?? { genres: [], moods: [], voiceTypes: [] },
     onboardingComplete: patch.onboardingComplete ?? existing?.onboardingComplete ?? false,

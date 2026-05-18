@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { MockAudioPlayer } from "@/components/mock-audio-player";
-import { getStoredUser } from "@/lib/auth";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useVocalistRequest } from "@/lib/hooks/use-vocalist-requests";
 import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
 import {
@@ -20,43 +20,48 @@ import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
 
 export default function VocalistRequestDetailPage() {
   const params = useParams<{ requestId: string }>();
+
+  return (
+    <InternalPageShell activeItem="orders">
+      <VocalistRequestDetailContent requestId={params.requestId} />
+    </InternalPageShell>
+  );
+}
+
+function VocalistRequestDetailContent({ requestId }: { requestId: string }) {
   const router = useRouter();
-  const user = getStoredUser();
+  const { user, isReady } = useClientAuth();
   const vocalistId = user ? vocalistIdFromEmail(user.email) : "";
-  const request = useVocalistRequest(params.requestId);
+  const request = useVocalistRequest(requestId);
 
   useEffect(() => {
+    if (!isReady) return;
     if (!user || user.role !== "vocalist") {
       router.replace("/signup?role=vocalist");
       return;
     }
     ensureVocalistRequestsSeeded();
-  }, [router, user]);
+  }, [router, user, isReady]);
 
   useEffect(() => {
-    if (request && vocalistId && request.vocalistId !== vocalistId) {
+    if (!isReady || !request || !vocalistId) return;
+    if (request.vocalistId !== vocalistId) {
       router.replace("/vocalist/orders");
     }
-  }, [request, vocalistId, router]);
+  }, [request, vocalistId, router, isReady]);
 
-  if (!user || user.role !== "vocalist") {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-black text-zinc-300">
-        Loading...
-      </main>
-    );
+  if (!isReady || !user || user.role !== "vocalist") {
+    return <p className="text-sm text-zinc-400">Loading...</p>;
   }
 
   if (!request) {
     return (
-      <InternalPageShell activeItem="orders">
-        <div className="mx-auto max-w-3xl space-y-4">
-          <p className="text-zinc-400">Request not found.</p>
-          <AnimatedButton href="/vocalist/orders" variant="secondary" className="rounded-lg px-4 py-2 text-sm">
-            Back to requests
-          </AnimatedButton>
-        </div>
-      </InternalPageShell>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <p className="text-zinc-400">Request not found.</p>
+        <AnimatedButton href="/vocalist/orders" variant="secondary" className="rounded-lg px-4 py-2 text-sm">
+          Back to requests
+        </AnimatedButton>
+      </div>
     );
   }
 
@@ -74,16 +79,15 @@ export default function VocalistRequestDetailPage() {
   const isAccepted = request.status === "accepted";
 
   return (
-    <InternalPageShell activeItem="orders">
-      <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
         <Link href="/vocalist/orders" className="text-sm text-zinc-400 hover:text-zinc-200">
           ← Back to requests
         </Link>
 
         <header className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.18em] text-cyan-300/80">Producer request</p>
-          <h1 className="text-3xl font-bold tracking-tight">{request.projectName}</h1>
-          <p className="text-zinc-400">
+          <p className="text-vox-eyebrow">Producer request</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{request.projectName}</h1>
+          <p className="text-vox-secondary">
             from <span className="text-zinc-200">{request.producerName}</span>
           </p>
           <span className="inline-flex rounded-full border border-white/15 px-3 py-1 text-xs text-zinc-300">
@@ -93,8 +97,8 @@ export default function VocalistRequestDetailPage() {
 
         <section className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5 space-y-4">
           <div>
-            <h2 className="text-sm font-medium text-zinc-400">What the producer wants</h2>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-200">{request.brief || request.description}</p>
+            <h2 className="text-vox-label normal-case tracking-normal text-zinc-400">What the producer wants</h2>
+            <p className="mt-2 text-vox-secondary leading-relaxed">{request.brief || request.description}</p>
           </div>
           {request.description && request.brief !== request.description && (
             <div>
@@ -192,8 +196,7 @@ export default function VocalistRequestDetailPage() {
             Back to requests
           </AnimatedButton>
         </div>
-      </div>
-    </InternalPageShell>
+    </div>
   );
 }
 

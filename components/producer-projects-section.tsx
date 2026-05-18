@@ -14,18 +14,27 @@ export function ProducerProjectsSection() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">My Projects</h2>
-          <p className="mt-2 text-sm text-zinc-300">
+          <h2 className="text-2xl font-semibold tracking-tight">My Projects</h2>
+          <p className="mt-2 text-vox-secondary">
             Producer orders from upload → match → request → workspace.
           </p>
         </div>
-        <AnimatedButton
-          href="/search"
-          variant="primary"
-          className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
-        >
-          New upload
-        </AnimatedButton>
+        <div className="flex flex-wrap gap-2">
+          <AnimatedButton
+            href="/workspace"
+            variant="secondary"
+            className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+          >
+            All projects
+          </AnimatedButton>
+          <AnimatedButton
+            href="/search"
+            variant="primary"
+            className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+          >
+            New upload
+          </AnimatedButton>
+        </div>
       </div>
 
       {orders.length === 0 ? (
@@ -64,7 +73,7 @@ function ProjectGroup({
 }) {
   return (
     <section className="space-y-3">
-      <h3 className="text-sm uppercase tracking-[0.16em] text-zinc-500">{title}</h3>
+      <h3 className="text-vox-label">{title}</h3>
       <div className="grid gap-3">
         {orders.map((order) => (
           <article
@@ -77,11 +86,13 @@ function ProjectGroup({
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="font-medium text-zinc-100">{order.trackName}</p>
-                <p className="mt-1 text-sm text-zinc-400">with {order.vocalistName}</p>
+                <p className="text-sm font-medium text-zinc-100">
+                  {order.projectName || order.trackName}
+                </p>
+                <p className="mt-1 text-vox-meta">with {order.vocalistName}</p>
               </div>
               <span
-                className={`text-xs font-medium uppercase tracking-wide ${
+                className={`text-[11px] font-medium uppercase tracking-wide ${
                   completed ? "text-emerald-300" : "text-purple-300"
                 }`}
               >
@@ -91,7 +102,7 @@ function ProjectGroup({
             <AnimatedButton
               href={`/workspace/${order.id}`}
               variant="secondary"
-              className="mt-4 inline-flex rounded-lg px-4 py-2 text-xs"
+              className="mt-4 inline-flex rounded-lg px-4 py-2 text-sm font-medium"
             >
               Open workspace
             </AnimatedButton>

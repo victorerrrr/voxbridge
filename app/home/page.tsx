@@ -1,29 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import InternalShell from "@/components/internal-shell";
 import { HomeAudioProvider } from "@/components/home/home-audio-provider";
 import { HomeFeed } from "@/components/home/home-feed";
 import { HomeMiniPlayer } from "@/components/home/home-mini-player";
-import { getStoredUser, type AuthUser } from "@/lib/auth";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
 
 export default function HomePage() {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, role, isAdmin, inAdminCenter, isReady, isAuthenticated, refresh } =
+    useClientAuth();
 
   useEffect(() => {
-    const authUser = getStoredUser();
-    if (!authUser || !authUser.isAuthenticated) {
+    if (!isReady) return;
+    if (!isAuthenticated) {
       router.replace("/signup");
       return;
     }
-    setUser(authUser);
-    setIsLoading(false);
-  }, [router]);
+    if (inAdminCenter) {
+      router.replace("/admin");
+    }
+  }, [isReady, isAuthenticated, inAdminCenter, router]);
 
-  if (isLoading || !user) {
+  if (!isReady || !user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black px-6 text-zinc-300">
         Loading home...
@@ -32,10 +33,15 @@ export default function HomePage() {
   }
 
   return (
-    <InternalShell role={user.role} activeItem="home">
+    <InternalShell
+      role={role}
+      isAdmin={isAdmin}
+      onAdminRoleChange={refresh}
+      activeItem="home"
+    >
       <HomeAudioProvider>
         <div className="relative pb-28">
-          <HomeFeed user={user} />
+          <HomeFeed user={{ ...user, role }} />
         </div>
         <HomeMiniPlayer />
       </HomeAudioProvider>

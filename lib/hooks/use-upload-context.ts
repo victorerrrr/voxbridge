@@ -12,7 +12,7 @@ export function useUploadContext(): UploadContext | null {
 
   useEffect(() => {
     const sync = () => setContext(getUploadContext());
-    queueMicrotask(sync);
+    sync();
     return subscribeUploadContext(sync);
   }, []);
 

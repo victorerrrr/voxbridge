@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredUser, type AuthUser } from "@/lib/auth";
 import { getVocalistProfileByEmail } from "@/lib/vocalist-profile";
@@ -11,21 +11,23 @@ type GuardOptions = {
 
 export function useVocalistGuard(options: GuardOptions = {}): AuthUser | null {
   const router = useRouter();
-  const user = getStoredUser();
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== "vocalist") {
+    const stored = getStoredUser();
+    if (!stored || stored.role !== "vocalist") {
       router.replace("/signup?role=vocalist");
       return;
     }
     if (options.requireProfile) {
-      const profile = getVocalistProfileByEmail(user.email);
+      const profile = getVocalistProfileByEmail(stored.email);
       if (!profile?.username) {
         router.replace("/vocalist/onboarding");
+        return;
       }
     }
-  }, [router, user?.email, user?.role, options.requireProfile]);
+    setUser(stored);
+  }, [router, options.requireProfile]);
 
-  if (!user || user.role !== "vocalist") return null;
   return user;
 }

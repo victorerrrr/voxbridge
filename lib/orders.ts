@@ -246,6 +246,15 @@ export function markOrderCompleted(id: string): ProducerOrder | null {
   });
 }
 
+export function createMockWorkspaceProject(projectName: string): ProducerOrder {
+  return createProducerOrder("vb-demo-vocalist", "Demo Vocalist", {
+    projectName: projectName.trim() || "Untitled project",
+    trackName: projectName.trim() || "Untitled project",
+    producerName: "You",
+    description: "Mock workspace project",
+  });
+}
+
 export const orderStatusLabel: Record<OrderStatus, string> = {
   in_progress: "In progress",
   preview_pending: "Waiting for approval",

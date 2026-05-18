@@ -30,7 +30,7 @@ export default function ResultsPage() {
   const vocalists = getRankedVocalists();
 
   return (
-    <InternalPageShell activeItem="explore">
+    <InternalPageShell activeItem="upload">
       <div className="mx-auto max-w-5xl">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>

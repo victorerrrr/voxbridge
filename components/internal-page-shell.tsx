@@ -1,36 +1,52 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import InternalShell from "@/components/internal-shell";
-import { getStoredUser, type AuthUser } from "@/lib/auth";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
 
 type InternalPageShellProps = {
   activeItem: string;
   children: ReactNode;
+  contentVariant?: "default" | "workspace";
 };
 
-export function InternalPageShell({ activeItem, children }: InternalPageShellProps) {
+export function InternalPageShell({
+  activeItem,
+  children,
+  contentVariant = "default",
+}: InternalPageShellProps) {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, role, isAdmin, inAdminCenter, isReady, isAuthenticated, refresh } =
+    useClientAuth();
 
   useEffect(() => {
-    const authUser = getStoredUser();
-    if (!authUser || !authUser.isAuthenticated) {
+    if (!isReady) return;
+    if (!isAuthenticated) {
       router.replace("/signup");
       return;
     }
-    setUser(authUser);
-    setIsLoading(false);
-  }, [router]);
+    if (inAdminCenter) {
+      router.replace("/admin");
+    }
+  }, [isReady, isAuthenticated, inAdminCenter, router]);
 
-  if (isLoading || !user) {
-    return <main className="flex min-h-screen items-center justify-center bg-black px-6 text-zinc-300">Loading...</main>;
+  if (!isReady || !user) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black px-6 text-zinc-300">
+        Loading...
+      </main>
+    );
   }
 
   return (
-    <InternalShell role={user.role} activeItem={activeItem}>
+    <InternalShell
+      role={role}
+      isAdmin={isAdmin}
+      onAdminRoleChange={refresh}
+      activeItem={activeItem}
+      contentVariant={contentVariant}
+    >
       {children}
     </InternalShell>
   );

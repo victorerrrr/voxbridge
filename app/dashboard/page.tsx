@@ -2,7 +2,16 @@
 
 import { ChangeEvent, FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AuthUser, clearStoredUser, getStoredUser, saveStoredUser } from "@/lib/auth";
+import {
+  AuthUser,
+  clearStoredUser,
+  getStoredUser,
+  saveStoredUser,
+  updateStoredUser,
+} from "@/lib/auth";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
+import { ExternalLinksEditor } from "@/components/external-links-section";
+import type { ExternalLinks } from "@/lib/external-links";
 import PasswordInput from "@/components/password-input";
 import { AnimatedButton } from "@/components/animated-button";
 import InternalShell from "@/components/internal-shell";
@@ -27,28 +36,33 @@ export default function DashboardPage() {
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, role: effectiveRole, isAdmin, inAdminCenter, isReady, isAuthenticated, refresh } =
+    useClientAuth();
+  const [userState, setUserState] = useState<AuthUser | null>(null);
 
   const selectedTab = (searchParams.get("tab") as TabKey | null) ?? "overview";
 
   useEffect(() => {
-    const authUser = getStoredUser();
-    if (!authUser || !authUser.isAuthenticated) {
+    if (!isReady) return;
+    if (!isAuthenticated) {
       router.replace("/signup");
       return;
     }
+    if (inAdminCenter) {
+      router.replace("/admin");
+      return;
+    }
+    if (user) setUserState(user);
+  }, [isReady, isAuthenticated, inAdminCenter, router, user]);
 
-    setUser(authUser);
-    setIsLoading(false);
-  }, [router]);
+  const activeUser = userState ?? user;
 
   const tabs = useMemo<TabKey[]>(() => {
-    if (!user) return ["overview", "profile", "settings"];
-    return user.role === "vocalist"
+    if (!activeUser) return ["overview", "profile", "settings"];
+    return effectiveRole === "vocalist"
       ? ["overview", "profile", "settings", "vocal-profile", "samples"]
       : ["overview", "profile", "settings", "projects", "saved-vocalists"];
-  }, [user]);
+  }, [activeUser, effectiveRole]);
 
   const safeTab = tabs.includes(selectedTab) ? selectedTab : "overview";
 
@@ -57,7 +71,7 @@ function DashboardContent() {
     window.setTimeout(() => router.push("/"), 150);
   };
 
-  if (isLoading || !user) {
+  if (!isReady || !activeUser) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black px-6 text-zinc-300">
         Loading dashboard...
@@ -66,29 +80,48 @@ function DashboardContent() {
   }
 
   return (
-    <InternalShell role={user.role} activeItem={safeTab === "overview" ? "dashboard" : safeTab}>
-      {safeTab === "overview" && <OverviewSection user={user} />}
-      {safeTab === "profile" && <ProfileSection user={user} onUserChange={setUser} />}
-      {safeTab === "settings" && <SettingsSection user={user} onUserChange={setUser} onLogout={onLogout} />}
+    <InternalShell
+      role={effectiveRole}
+      isAdmin={isAdmin}
+      onAdminRoleChange={() => {
+        refresh();
+        const authUser = getStoredUser();
+        if (authUser) setUserState(authUser);
+      }}
+      activeItem={safeTab === "overview" ? "dashboard" : safeTab}
+    >
+      {safeTab === "overview" && <OverviewSection user={activeUser} effectiveRole={effectiveRole} />}
+      {safeTab === "profile" && <ProfileSection user={activeUser} onUserChange={setUserState} />}
+      {safeTab === "settings" && (
+        <SettingsSection user={activeUser} onUserChange={setUserState} onLogout={onLogout} />
+      )}
       {safeTab === "vocal-profile" && <Placeholder title="My Vocal Profile" body="Add your genres, range and style tags." />}
       {safeTab === "samples" && <Placeholder title="My Samples" body="Sample management UI will be added next." />}
-      {safeTab === "projects" && user.role === "producer" && <ProducerProjectsSection />}
-      {safeTab === "projects" && user.role === "vocalist" && (
+      {safeTab === "projects" && effectiveRole === "producer" && <ProducerProjectsSection />}
+      {safeTab === "projects" && effectiveRole === "vocalist" && (
         <Placeholder title="My Projects" body="Track and manage your vocal search projects." />
       )}
-      {safeTab === "saved-vocalists" && (
-        <Placeholder title="Saved Vocalists" body="Your shortlist of favorite vocalists appears here." />
-      )}
+      {safeTab === "saved-vocalists" && <SavedVocalistsRedirect />}
     </InternalShell>
   );
 }
 
-function OverviewSection({ user }: { user: AuthUser }) {
+function SavedVocalistsRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/saved-vocalists");
+  }, [router]);
+  return (
+    <p className="text-sm text-zinc-400">Opening saved vocalists...</p>
+  );
+}
+
+function OverviewSection({ user, effectiveRole }: { user: AuthUser; effectiveRole: AuthUser["role"] }) {
   const roleCards =
-    user.role === "producer"
+    effectiveRole === "producer"
       ? [
-          { title: "My Projects", body: "Track active briefs and matching rounds.", href: "/dashboard?tab=projects" },
-          { title: "Saved Vocalists", body: "Manage your shortlisted vocal talents.", href: "/dashboard?tab=saved-vocalists" },
+          { title: "My Projects", body: "Track active briefs and matching rounds.", href: "/workspace" },
+          { title: "Saved Vocalists", body: "Manage your shortlisted vocal talents.", href: "/saved-vocalists" },
         ]
       : [
           { title: "My Vocal Profile", body: "Tune tags and voice details for better matching.", href: "/dashboard?tab=vocal-profile" },
@@ -107,7 +140,7 @@ function OverviewSection({ user }: { user: AuthUser }) {
       <section className="grid gap-4 md:grid-cols-3">
         <article className="rounded-xl border border-white/10 bg-black/30 p-4">
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Role</p>
-          <p className="mt-2 text-lg font-medium capitalize text-zinc-100">{user.role}</p>
+          <p className="mt-2 text-lg font-medium capitalize text-zinc-100">{effectiveRole}</p>
         </article>
         <article className="rounded-xl border border-white/10 bg-black/30 p-4">
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Email</p>
@@ -134,7 +167,7 @@ function OverviewSection({ user }: { user: AuthUser }) {
         </article>
 
         <article className="rounded-xl border border-white/10 bg-black/30 p-5">
-          <h3 className="text-lg font-semibold">{user.role === "producer" ? "Producer tools" : "Vocalist tools"}</h3>
+          <h3 className="text-lg font-semibold">{effectiveRole === "producer" ? "Producer tools" : "Vocalist tools"}</h3>
           <div className="mt-3 space-y-3">
             {roleCards.map((card) => (
               <div key={card.title} className="rounded-lg border border-white/10 bg-white/5 p-3">
@@ -154,6 +187,17 @@ function OverviewSection({ user }: { user: AuthUser }) {
 
 function ProfileSection({ user, onUserChange }: { user: AuthUser; onUserChange: (next: AuthUser) => void }) {
   const [isUploading, setIsUploading] = useState(false);
+  const [externalLinks, setExternalLinks] = useState<ExternalLinks>(user.externalLinks ?? {});
+  const [linksSaved, setLinksSaved] = useState(false);
+
+  const saveExternalLinks = () => {
+    const updated = updateStoredUser({ externalLinks });
+    if (updated) {
+      onUserChange(updated);
+      setLinksSaved(true);
+      window.setTimeout(() => setLinksSaved(false), 2000);
+    }
+  };
 
   const handleAvatarUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -201,6 +245,17 @@ function ProfileSection({ user, onUserChange }: { user: AuthUser; onUserChange: 
         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       </label>
       {isUploading && <p className="text-sm text-zinc-400">Uploading...</p>}
+
+      <ExternalLinksEditor links={externalLinks} onChange={setExternalLinks} />
+      <AnimatedButton
+        type="button"
+        variant="secondary"
+        onClick={saveExternalLinks}
+        className="rounded-lg px-4 py-2 text-sm"
+      >
+        Save links
+      </AnimatedButton>
+      {linksSaved && <p className="text-sm text-emerald-300">Links saved.</p>}
     </div>
   );
 }

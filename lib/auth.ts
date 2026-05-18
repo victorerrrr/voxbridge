@@ -1,14 +1,20 @@
 "use client";
 
+import type { ExternalLinks } from "@/lib/external-links";
+
 export type UserRole = "producer" | "vocalist";
+
+/** Stored on account; admin is only for the built-in admin login. */
+export type StoredAccountRole = UserRole | "admin";
 
 export type AuthUser = {
   email: string;
   username: string;
-  role: UserRole;
+  role: StoredAccountRole;
   isAuthenticated: boolean;
   password?: string;
   avatar?: string;
+  externalLinks?: ExternalLinks;
 };
 
 type StoredAccount = Omit<AuthUser, "isAuthenticated">;
@@ -22,15 +28,27 @@ type AuthStorageState = {
 
 const STORAGE_KEY = "voxbridge_auth_state";
 const LEGACY_STORAGE_KEY = "voxbridge_user";
+const ADMIN_ROLE_OVERRIDE_KEY = "voxbridge_admin_role_override";
 
-const isRole = (value: unknown): value is UserRole => {
+const ADMIN_EMAIL = "admin";
+const ADMIN_PASSWORD = "admin";
+
+const isUserRole = (value: unknown): value is UserRole => {
   return value === "producer" || value === "vocalist";
+};
+
+const isStoredAccountRole = (value: unknown): value is StoredAccountRole => {
+  return isUserRole(value) || value === "admin";
 };
 
 const isStoredAccount = (value: unknown): value is StoredAccount => {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StoredAccount>;
-  return Boolean(candidate.email) && Boolean(candidate.username) && isRole(candidate.role);
+  return (
+    Boolean(candidate.email) &&
+    Boolean(candidate.username) &&
+    isStoredAccountRole(candidate.role)
+  );
 };
 
 const normalizeAccount = (account: StoredAccount): StoredAccount => ({
@@ -39,6 +57,7 @@ const normalizeAccount = (account: StoredAccount): StoredAccount => ({
   role: account.role,
   password: account.password,
   avatar: account.avatar,
+  externalLinks: account.externalLinks ?? {},
 });
 
 const toAuthUser = (account: StoredAccount, isAuthenticated: boolean): AuthUser => ({
@@ -59,7 +78,7 @@ const parseLegacyUser = (): AuthUser | null => {
 
   try {
     const parsed = JSON.parse(raw) as Partial<AuthUser>;
-    if (!parsed.email || !parsed.username || !isRole(parsed.role)) return null;
+    if (!parsed.email || !parsed.username || !isStoredAccountRole(parsed.role)) return null;
     return {
       email: parsed.email,
       username: parsed.username,
@@ -129,6 +148,7 @@ export const saveStoredUser = (user: AuthUser): void => {
       role: user.role,
       password: user.password,
       avatar: user.avatar,
+      externalLinks: user.externalLinks,
     }),
     session: {
       isAuthenticated: user.isAuthenticated === true,
@@ -167,19 +187,76 @@ export const registerStoredUser = (user: Omit<AuthUser, "isAuthenticated">): Aut
   return nextUser;
 };
 
+export const isAdminAccount = (user: AuthUser | null | undefined): boolean => {
+  if (!user) return false;
+  return user.email.trim().toLowerCase() === ADMIN_EMAIL;
+};
+
+export const getAdminRoleOverride = (): UserRole | null => {
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem(ADMIN_ROLE_OVERRIDE_KEY);
+  return stored === "producer" || stored === "vocalist" ? stored : null;
+};
+
+export const setAdminRoleOverride = (role: UserRole): void => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ADMIN_ROLE_OVERRIDE_KEY, role);
+};
+
+export const clearAdminRoleOverride = (): void => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ADMIN_ROLE_OVERRIDE_KEY);
+};
+
+/** Admin logged in without producer/vocalist preview override. */
+export const isInAdminCenter = (user: AuthUser | null | undefined): boolean => {
+  if (!isAdminAccount(user)) return false;
+  return getAdminRoleOverride() === null;
+};
+
+export const getEffectiveRole = (user: AuthUser | null | undefined): UserRole => {
+  if (!user) return "producer";
+  if (isAdminAccount(user)) {
+    const override = getAdminRoleOverride();
+    if (override) return override;
+    return "producer";
+  }
+  if (isUserRole(user.role)) return user.role;
+  return "producer";
+};
+
+const loginAsAdmin = (): AuthUser => {
+  clearAdminRoleOverride();
+  const adminUser: AuthUser = {
+    email: ADMIN_EMAIL,
+    username: "Admin",
+    role: "admin",
+    password: ADMIN_PASSWORD,
+    isAuthenticated: true,
+  };
+  saveStoredUser(adminUser);
+  window.localStorage.setItem("voxbridge_admin_mode", "true");
+  return adminUser;
+};
+
 export const loginStoredUser = (
   identifier: string,
   password: string
 ): { user: AuthUser | null; error: "account_not_found" | "invalid_credentials" | null } => {
   if (typeof window === "undefined") return { user: null, error: "account_not_found" };
 
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  if (normalizedIdentifier === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+    return { user: loginAsAdmin(), error: null };
+  }
+
   const state = readAuthState();
   if (!state.account) return { user: null, error: "account_not_found" };
 
-  const normalizedIdentifier = identifier.trim().toLowerCase();
   const normalizedEmail = state.account.email.toLowerCase();
   const normalizedUsername = state.account.username.toLowerCase();
-  const matchesIdentifier = normalizedIdentifier === normalizedEmail || normalizedIdentifier === normalizedUsername;
+  const matchesIdentifier =
+    normalizedIdentifier === normalizedEmail || normalizedIdentifier === normalizedUsername;
   const matchesPassword = Boolean(state.account.password) && state.account.password === password;
 
   if (!matchesIdentifier || !matchesPassword) {

@@ -46,41 +46,29 @@ export default function Home() {
 
           <div className="mt-10 w-full max-w-3xl rounded-3xl border border-white/15 bg-zinc-950/70 p-4 shadow-[0_20px_90px_-40px_rgba(168,85,247,0.65)] backdrop-blur-xl md:p-5">
             <div className="flex flex-col gap-3 md:flex-row">
-              <AnimatedButton
-                href="/search"
-                variant="primary"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl px-6 py-3.5 text-sm font-semibold"
-              >
-                Upload AI Vocal
-              </AnimatedButton>
-              <AnimatedButton
-                href="/search?mode=describe"
-                variant="secondary"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl px-6 py-3.5 text-sm font-medium"
-              >
-                Describe the voice instead
-              </AnimatedButton>
+              <div className="flex flex-1 flex-col items-center gap-1.5">
+                <AnimatedButton
+                  href="/signup?role=producer"
+                  variant="primary"
+                  className="inline-flex w-full items-center justify-center rounded-2xl px-6 py-3.5 text-sm font-semibold"
+                >
+                  Upload AI Vocal
+                </AnimatedButton>
+                <p className="text-xs text-zinc-400">Continue as Producer</p>
+              </div>
+              <div className="flex flex-1 flex-col items-center gap-1.5">
+                <AnimatedButton
+                  href="/signup?role=vocalist"
+                  variant="secondary"
+                  className="inline-flex w-full items-center justify-center rounded-2xl px-6 py-3.5 text-sm font-medium"
+                >
+                  Add your voice
+                </AnimatedButton>
+                <p className="text-xs text-zinc-400">Join as Vocalist</p>
+              </div>
             </div>
           </div>
-
-          <div className="mt-6 flex flex-col items-center gap-3 text-sm text-zinc-300 sm:flex-row">
-            <AnimatedButton
-              href="/signup?role=producer"
-              variant="secondary"
-              className="inline-flex items-center justify-center rounded-xl px-4 py-2"
-            >
-              Continue as Producer
-            </AnimatedButton>
-            <AnimatedButton
-              href="/signup?role=vocalist"
-              variant="secondary"
-              className="inline-flex items-center justify-center rounded-xl px-4 py-2"
-            >
-              Join as Vocalist
-            </AnimatedButton>
-          </div>
         </section>
-
       </div>
     </main>
   );

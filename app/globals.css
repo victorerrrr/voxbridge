@@ -25,79 +25,116 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* VoxBridge typography — readable secondary text, restrained weight */
+.text-vox-eyebrow {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: rgb(103 232 249 / 0.88);
+}
+
+.text-vox-label {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: rgb(161 161 170);
+}
+
+.text-vox-secondary {
+  font-size: 0.9375rem;
+  line-height: 1.5rem;
+  color: rgb(212 212 216);
+}
+
+.text-vox-muted {
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  color: rgb(161 161 170);
+}
+
+.text-vox-meta {
+  font-size: 0.8125rem;
+  line-height: 1.35rem;
+  color: rgb(161 161 170);
+}
+
 @keyframes glowOrbA {
   0% {
-    transform: translate3d(0, 0, 0) scale(0.98);
-    opacity: 0.4;
+    transform: translate3d(0, 0, 0) scale(0.96);
+    opacity: 0.56;
   }
   30% {
-    transform: translate3d(22px, -20px, 0) scale(1.06);
-    opacity: 0.54;
+    transform: translate3d(28px, -24px, 0) scale(1.1);
+    opacity: 0.78;
   }
   65% {
-    transform: translate3d(-22px, 18px, 0) scale(0.95);
-    opacity: 0.36;
+    transform: translate3d(-26px, 22px, 0) scale(0.94);
+    opacity: 0.52;
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(0.98);
-    opacity: 0.4;
+    transform: translate3d(0, 0, 0) scale(0.96);
+    opacity: 0.56;
   }
 }
 
 @keyframes glowOrbB {
   0% {
     transform: translate3d(0, 0, 0) scale(0.97);
-    opacity: 0.36;
+    opacity: 0.44;
   }
   45% {
     transform: translate3d(-20px, 20px, 0) scale(1.06);
-    opacity: 0.52;
+    opacity: 0.62;
   }
   75% {
     transform: translate3d(18px, -14px, 0) scale(0.94);
-    opacity: 0.34;
+    opacity: 0.42;
   }
   100% {
     transform: translate3d(0, 0, 0) scale(0.97);
-    opacity: 0.36;
+    opacity: 0.44;
   }
 }
 
 @keyframes glowOrbC {
   0% {
     transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.38;
+    opacity: 0.46;
   }
   35% {
     transform: translate3d(18px, 16px, 0) scale(1.08);
-    opacity: 0.5;
+    opacity: 0.6;
   }
   70% {
     transform: translate3d(-14px, -12px, 0) scale(0.93);
-    opacity: 0.34;
+    opacity: 0.42;
   }
   100% {
     transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.38;
+    opacity: 0.46;
   }
 }
 
 @keyframes glowOrbD {
   0% {
     transform: translate3d(0, 0, 0) scale(0.95);
-    opacity: 0.32;
+    opacity: 0.4;
   }
   40% {
     transform: translate3d(16px, -18px, 0) scale(1.04);
-    opacity: 0.46;
+    opacity: 0.56;
   }
   80% {
     transform: translate3d(-12px, 10px, 0) scale(0.92);
-    opacity: 0.3;
+    opacity: 0.38;
   }
   100% {
     transform: translate3d(0, 0, 0) scale(0.95);
-    opacity: 0.32;
+    opacity: 0.4;
   }
 }
 
@@ -114,14 +151,14 @@ body {
 }
 
 .glow-orb {
-  --orb-purple: rgba(168, 85, 247, 0.5);
-  --orb-blue: rgba(59, 130, 246, 0.42);
-  --orb-cyan: rgba(34, 211, 238, 0.34);
-  --orb-pink: rgba(219, 39, 119, 0.38);
+  --orb-purple: rgba(168, 85, 247, 0.72);
+  --orb-blue: rgba(59, 130, 246, 0.6);
+  --orb-cyan: rgba(34, 211, 238, 0.52);
+  --orb-pink: rgba(219, 39, 119, 0.56);
   border-radius: 9999px;
   mix-blend-mode: screen;
-  filter: blur(120px);
-  opacity: 0.44;
+  filter: blur(124px);
+  opacity: 0.64;
   background:
     radial-gradient(circle at 26% 24%, var(--orb-purple) 0%, transparent 42%),
     radial-gradient(circle at 70% 30%, var(--orb-blue) 8%, transparent 52%),
@@ -165,6 +202,60 @@ body {
   animation:
     glowOrbC 15s ease-in-out infinite reverse,
     glowGradientFlow 10s ease-in-out infinite;
+}
+
+.animate-glow-orb-g {
+  animation:
+    glowOrbD 20s ease-in-out infinite,
+    glowGradientFlow 16s ease-in-out infinite alternate;
+}
+
+.animate-glow-orb-h {
+  animation:
+    glowOrbA 14s ease-in-out infinite reverse,
+    glowGradientFlow 12s ease-in-out infinite alternate-reverse;
+}
+
+.animate-glow-orb-i {
+  animation:
+    glowOrbB 22s ease-in-out infinite,
+    glowGradientFlow 17s ease-in-out infinite;
+}
+
+.animate-glow-orb-j {
+  animation:
+    glowOrbC 13s ease-in-out infinite alternate,
+    glowGradientFlow 9s ease-in-out infinite alternate-reverse;
+}
+
+.animate-glow-orb-k {
+  animation:
+    glowOrbD 18s ease-in-out infinite reverse,
+    glowGradientFlow 14s ease-in-out infinite alternate;
+}
+
+.animate-glow-orb-l {
+  animation:
+    glowOrbA 16s ease-in-out infinite alternate-reverse,
+    glowGradientFlow 11s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-orb,
+  .animate-glow-orb-a,
+  .animate-glow-orb-b,
+  .animate-glow-orb-c,
+  .animate-glow-orb-d,
+  .animate-glow-orb-e,
+  .animate-glow-orb-f,
+  .animate-glow-orb-g,
+  .animate-glow-orb-h,
+  .animate-glow-orb-i,
+  .animate-glow-orb-j,
+  .animate-glow-orb-k,
+  .animate-glow-orb-l {
+    animation: none !important;
+  }
 }
 
 /* ---------- Animated CTA buttons (VoxBridge) ---------- */

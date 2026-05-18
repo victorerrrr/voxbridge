@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AuthUser } from "@/lib/auth";
+import type { AuthUser, UserRole } from "@/lib/auth";
 import { buildHomeWorkspaceTracks, type HomeWorkspaceTrack } from "@/lib/home-tracks";
 import { useHomeAudio } from "@/components/home/home-audio-provider";
 import {
@@ -23,7 +23,7 @@ import { usePendingVocalistRequests } from "@/lib/hooks/use-vocalist-requests";
 import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
 
 type HomeWorkspaceProps = {
-  user: AuthUser;
+  user: AuthUser & { role: UserRole };
 };
 
 const DEFAULT_FILTERS: HomeListFilters = {
@@ -134,7 +134,7 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/5">
             <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-3 py-2 md:px-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <h2 className="text-vox-label normal-case tracking-normal text-zinc-400">
                 Track feed
               </h2>
               <span className="text-[11px] tabular-nums text-zinc-600">

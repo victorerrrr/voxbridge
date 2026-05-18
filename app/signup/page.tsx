@@ -66,6 +66,7 @@ function SignupPageContent() {
         <p className="mt-3 text-zinc-400">Simple frontend signup for the MVP demo.</p>
 
         <form
+          key={initialRole}
           onSubmit={handleSubmit}
           className="mt-8 space-y-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-6"
         >
@@ -91,19 +92,29 @@ function SignupPageContent() {
             placeholder="Password"
           />
 
-          <div>
-            <label htmlFor="role" className="mb-2 block text-sm text-zinc-300">
-              Role
-            </label>
-            <select
-              id="role"
-              value={role}
-              onChange={(event) => setRole(event.target.value as Role)}
-              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none ring-purple-500/50 focus:ring-2"
-            >
-              <option value="producer">{roleLabels.producer}</option>
-              <option value="vocalist">{roleLabels.vocalist}</option>
-            </select>
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-300">I am a</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["producer", "vocalist"] as const).map((option) => {
+                const active = role === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setRole(option)}
+                    className={`rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                      active
+                        ? option === "producer"
+                          ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-100 ring-1 ring-cyan-400/30"
+                          : "border-purple-400/50 bg-purple-500/20 text-white ring-1 ring-purple-400/40"
+                        : "border-white/10 bg-zinc-900/80 text-zinc-400 hover:border-white/25 hover:text-zinc-200"
+                    }`}
+                  >
+                    {roleLabels[option]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <AnimatedButton

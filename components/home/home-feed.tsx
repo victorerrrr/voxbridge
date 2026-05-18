@@ -1,10 +1,10 @@
 "use client";
 
-import type { AuthUser } from "@/lib/auth";
+import type { AuthUser, UserRole } from "@/lib/auth";
 import { HomeWorkspace } from "@/components/home/home-workspace";
 
 type HomeFeedProps = {
-  user: AuthUser;
+  user: AuthUser & { role: UserRole };
 };
 
 export function HomeFeed({ user }: HomeFeedProps) {
