@@ -7,3 +7,8 @@ speechbrain
 numpy
 scipy
 demucs
+torchcodec
+pydub
+audioop-lts
+librosa
+soundfile

@@ -6,6 +6,10 @@ cd "$ROOT"
 export HTTP_PROXY=""
 export HTTPS_PROXY=""
 export ALL_PROXY=""
+export http_proxy=""
+export https_proxy=""
+export all_proxy=""
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy 2>/dev/null || true
 export NO_PROXY="*"
 
 if [[ -x "./.venv/bin/python" ]]; then

@@ -6,6 +6,11 @@ Set-Location $Root
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
 $env:ALL_PROXY = ""
+$env:http_proxy = ""
+$env:https_proxy = ""
+$env:all_proxy = ""
+Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY, Env:ALL_PROXY -ErrorAction SilentlyContinue
+Remove-Item Env:http_proxy, Env:https_proxy, Env:all_proxy -ErrorAction SilentlyContinue
 $env:NO_PROXY = "*"
 
 if (Test-Path ".\.venv\Scripts\python.exe") {
