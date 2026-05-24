@@ -35,6 +35,73 @@ def _clear_proxy_env() -> None:
 
 _clear_proxy_env()
 
+os.environ.setdefault("SB_DISABLE_K2", "1")
+os.environ.setdefault("SPEECHBRAIN_DISABLE_K2", "1")
+
+
+_LAZY_INTEGRATION_MARKERS = (
+    "k2_fsa",
+    "k2_integration",
+    "huggingface",
+    "wordemb",
+    "integrations.",
+)
+
+_SPEECHBRAIN_STUB_MODULES = (
+    "speechbrain.integrations.k2_fsa",
+    "speechbrain.integrations.huggingface.wordemb",
+    "speechbrain.k2_integration",
+)
+
+
+def _speechbrain_lazy_target_disabled(target: str, name: str) -> bool:
+    combined = f"{target} {name}"
+    return any(marker in combined for marker in _LAZY_INTEGRATION_MARKERS)
+
+
+def _patch_speechbrain_lazy_integrations() -> None:
+    """Stub optional SpeechBrain integrations before any lazy import runs."""
+    import sys
+    import types
+
+    os.environ["SB_DISABLE_K2"] = "1"
+    os.environ["SPEECHBRAIN_DISABLE_K2"] = "1"
+
+    for stub_name in _SPEECHBRAIN_STUB_MODULES:
+        if stub_name not in sys.modules:
+            stub = types.ModuleType(stub_name)
+            stub.__doc__ = "Optional SpeechBrain integration disabled in VoxBridge."
+            sys.modules[stub_name] = stub
+
+    k2_stub = sys.modules["speechbrain.integrations.k2_fsa"]
+    sys.modules.setdefault("speechbrain.k2_integration", k2_stub)
+
+    from speechbrain.utils import importutils as _iu
+
+    if getattr(_iu.LazyModule.ensure_module, "_voxbridge_sb_patched", False):
+        return
+
+    _orig_ensure = _iu.LazyModule.ensure_module
+
+    def _ensure_module_patched(self, stacklevel: int):
+        target = self.__dict__.get("target", "") or ""
+        name = self.__dict__.get("name", "") or ""
+        if _speechbrain_lazy_target_disabled(target, name):
+            if self.lazy_module is None:
+                stub_key = name or target
+                self.lazy_module = (
+                    sys.modules.get(stub_key)
+                    or sys.modules.get(target)
+                    or types.ModuleType(stub_key)
+                )
+                sys.modules.setdefault(stub_key, self.lazy_module)
+            return self.lazy_module
+        return _orig_ensure(self, stacklevel)
+
+    _ensure_module_patched._voxbridge_sb_patched = True  # type: ignore[attr-defined]
+    _iu.LazyModule.ensure_module = _ensure_module_patched
+
+
 import asyncio
 import logging
 import shutil
@@ -61,63 +128,185 @@ logger = logging.getLogger(__name__)
 
 MODEL_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
 MODEL_SAVEDIR = "pretrained_models/spkrec-ecapa-voxceleb"
+ECAPA_EMBED_DIM = 192
 ECAPA_SAMPLE_RATE = 16000
-MAX_AUDIO_SECONDS = 15
-REQUEST_TIMEOUT_SEC = 10
+MAX_AUDIO_SECONDS = 10
+REQUEST_TIMEOUT_SEC = 30
 # Rough CPU budget to attempt one Demucs pass on the AI vocal.
 DEMUCS_MIN_REMAINING_SEC = 2.5
 DEMUCS_MODEL_NAME = os.environ.get("DEMUCS_MODEL", "htdemucs")
-# Chunk averaging: 5 x ~3 s windows within the 15 s trim (index-aligned pairs).
-CHUNK_DURATION_SEC = 3.0
+# Chunk averaging: 5 x 2 s windows within the 10 s trim (index-aligned pairs).
+CHUNK_DURATION_SEC = 2.0
 MAX_CHUNKS = 5
 # Mono samples in [-1, 1]; segments below this RMS are treated as silent and skipped.
 CHUNK_MIN_RMS = 0.01
 
-_classifier: "EncoderClassifier | None" = None
+# v4 composite weights (v3 was 35/32/28/5; v2 was 35/38/22/5; v1 was 40/30/25/5).
+V4_WEIGHTS: dict[str, float] = {
+    "speaker": 0.34,
+    "timbre": 0.28,
+    "pitch": 0.33,
+    "quality": 0.05,
+}
+# Median F0 (Hz) → range_band for vocal-type mismatch penalties.
+F0_RANGE_LOW_HZ = 165.0
+F0_RANGE_HIGH_HZ = 220.0
+# Legacy MIDI anchors (range bands); vocal type uses multi-feature rules below.
+PITCH_MIDI_MALE_MAX = 40.0
+PITCH_MIDI_FEMALE_MIN = 60.0
+# Multi-feature vocal type (pitch + timbre; NOT pitch alone).
+VOCAL_CLASSIFY_PITCH_LOW_MIDI = 40.0
+VOCAL_CLASSIFY_PITCH_HIGH_MIDI = 55.0
+VOCAL_CLASSIFY_PITCH_HIGH_STRICT_MIDI = 60.0
+VOCAL_CLASSIFY_FEMALE_MID_MIN_MIDI = 50.0
+VOCAL_CLASSIFY_CENTROID_BRIGHT_HZ = 2200.0
+VOCAL_CLASSIFY_CENTROID_DENSE_HZ = 1800.0
+VOCAL_CLASSIFY_MFCC_VAR_LOW_DENSITY = 1.2
+VOCAL_CLASSIFY_TIMBRE_BRIGHT_SCORE = 65.0
+VOCAL_CLASSIFY_LOW_BAND_HZ = 300.0
+VOCAL_CLASSIFY_LOW_BAND_RATIO_DENSE = 0.52
+VOCAL_TYPE_RANK_DISTANCE_WEIGHT = 20.0
+GENDER_MISMATCH_RANK_PENALTY = 35.0
+GENDER_MISMATCH_HARD_RANK_PENALTY = 40.0
+GENDER_PRIORITY_TIER_2_PENALTY = 50.0
+# Manual demo gender overrides (basename, case-insensitive). Pitch detection unchanged.
+MANUAL_DEMO_GENDER: dict[str, str] = {
+    "real_voice_1.wav": "male",
+}
+MALE_PROTOTYPE_FILENAME = "real_voice_1.wav"
+# High-pitched male: pitch+timbre cosine vs prototype (unit vector: MIDI/127 + MFCC + centroid/8k).
+HIGH_PITCHED_MALE_SIMILARITY_THRESHOLD = 0.75
+HIGH_PITCHED_MALE_PITCH_AVG_MIN = 55.0
+HIGH_PITCHED_MALE_PITCH_AMBIGUOUS_MIN = 40.0
+HIGH_PITCHED_MALE_PITCH_AMBIGUOUS_MAX = 65.0
+# v4.1 — softer mismatch multipliers (0.55–0.65); v4.2 removes universal post-penalty floor.
+VOCAL_TYPE_ADJACENT_BAND_MULTIPLIER = 0.65
+VOCAL_TYPE_LOW_HIGH_MULTIPLIER = 0.55
+VOCAL_TYPE_GENDER_CONFLICT_MULTIPLIER = 0.60
+VOCAL_MISMATCH_RANK_PENALTY = 8.0
+VOCAL_TYPE_RANK_REASON = "preferred due to closer vocal type match"
+VOCAL_MISMATCH_DEMOTION_REASON = "demoted due to vocal type mismatch"
+VOCAL_MISMATCH_HARD_CAP = 75.0
+VOCAL_MISMATCH_ADJACENT_CAP = 82.0
+VOCAL_MISMATCH_PITCH_THRESHOLD = 50.0
+VOCAL_MISMATCH_RANGE_OVERLAP_MAX = 40.0
+MIN_SIMILARITY_FLOOR = 20.0
+# v4.2 — rank-preserving stretch across demos (best → top band, worst → bottom band).
+NORMALIZE_TARGET_TOP = 85.0
+NORMALIZE_TARGET_BOTTOM = 28.0
+NORMALIZE_MIN_SPAN = 25.0
+NORMALIZE_RAW_FLAT_THRESHOLD = 5.0
+RANK_MIN_GAP = 10.0
+# rank_boost[position]: top +12, 2nd +0, 3rd −5, 4th −8, 5th+ −10
+RANK_BOOST_BY_POSITION = (12.0, 0.0, -5.0, -8.0, -10.0)
+MAX_SIMILARITY_CAP = 88.0
+MAX_SIMILARITY_CAP_ALIGNED = 95.0
+MAX_SIMILARITY_CAP_PERFECT = 99.0
+CAP_ALIGNED_COMPONENT_MIN = 85.0
+CAP_PERFECT_COMPONENT_MIN = 92.0
+ALIGNMENT_BONUS_THRESHOLD = 55.0
+ALIGNMENT_BONUS_MULTIPLIER = 1.08
+SINGLE_CHUNK_SPEAKER_DISCOUNT = 0.92
+PITCH_SCORE_FLOOR = 28.0
+LOW_VOICED_FRACTION = 0.25
+
+_encoder: Any = None
+_fallback: Any = None
 _demucs_model: Any = None
 _ml_loaded = False
 torch: Any = None
 torchaudio: Any = None
 apply_model: Any = None
 get_model: Any = None
-EncoderClassifier: Any = None
-LocalStrategy: Any = None
+
+
+class FallbackSpeakerEncoder:
+    """Offline MFCC mean-pool + fixed projection when ECAPA is unavailable."""
+
+    _log_once = False
+    _N_MFCC = 40
+
+    def __init__(self) -> None:
+        _load_ml_stack()
+        if not FallbackSpeakerEncoder._log_once:
+            logger.warning("Using fallback speaker encoder")
+            FallbackSpeakerEncoder._log_once = True
+        gen = torch.Generator().manual_seed(42)
+        proj = torch.randn(self._N_MFCC, ECAPA_EMBED_DIM, generator=gen)
+        proj = proj / proj.norm(dim=0, keepdim=True).clamp(min=1e-8)
+        self._proj = proj
+
+    def _mfcc_features(self, waveform: Any) -> Any:
+        import librosa
+
+        samples = waveform.squeeze().detach().cpu().numpy().astype(np.float64)
+        if samples.size == 0:
+            raise ValueError("empty waveform for fallback encoder")
+        mfcc = librosa.feature.mfcc(
+            y=samples,
+            sr=ECAPA_SAMPLE_RATE,
+            n_mfcc=self._N_MFCC,
+        )
+        return torch.from_numpy(np.mean(mfcc, axis=1).astype(np.float32))
+
+    def encode_batch(self, waveform: Any) -> Any:
+        if waveform.dim() == 1:
+            waveform = waveform.unsqueeze(0)
+        batch_size = waveform.shape[0]
+        vectors: list[Any] = []
+        for index in range(batch_size):
+            chunk = waveform[index : index + 1]
+            mfcc_mean = self._mfcc_features(chunk)
+            vector = mfcc_mean @ self._proj
+            norm = vector.norm().clamp(min=1e-8)
+            vectors.append((vector / norm).unsqueeze(0))
+        return torch.stack(vectors, dim=0)
 
 
 def _load_ml_stack() -> None:
-    global _ml_loaded, torch, torchaudio, apply_model, get_model, EncoderClassifier, LocalStrategy
+    global _ml_loaded, torch, torchaudio, apply_model, get_model
     if _ml_loaded:
         return
     _clear_proxy_env()
+    _patch_speechbrain_lazy_integrations()
     import torch as _torch
     import torchaudio as _torchaudio
     from demucs.apply import apply_model as _apply_model
     from demucs.pretrained import get_model as _get_model
-    from speechbrain.inference.speaker import EncoderClassifier as _EncoderClassifier
-    from speechbrain.utils.fetching import LocalStrategy as _LocalStrategy
 
     torch = _torch
     torchaudio = _torchaudio
     apply_model = _apply_model
     get_model = _get_model
-    EncoderClassifier = _EncoderClassifier
-    LocalStrategy = _LocalStrategy
     _ml_loaded = True
 
 
-def get_classifier() -> "EncoderClassifier":
-    global _classifier
-    if _classifier is None:
-        _clear_proxy_env()
-        _load_ml_stack()
+def get_classifier() -> Any:
+    global _encoder, _fallback
+    if _fallback is not None:
+        return _fallback
+    if _encoder is not None:
+        return _encoder
+
+    _clear_proxy_env()
+    _load_ml_stack()
+    _patch_speechbrain_lazy_integrations()
+    try:
+        from speechbrain.inference.speaker import EncoderClassifier
+        from speechbrain.utils.fetching import LocalStrategy
+
         logger.info("Loading SpeechBrain model: %s", MODEL_SOURCE)
-        _classifier = EncoderClassifier.from_hparams(
+        _encoder = EncoderClassifier.from_hparams(
             source=MODEL_SOURCE,
             savedir=MODEL_SAVEDIR,
             run_opts={"device": "cpu"},
             local_strategy=LocalStrategy.COPY,
         )
-    return _classifier
+        return _encoder
+    except Exception as exc:
+        logger.warning("ECAPA failed, using fallback: %s", exc)
+        _fallback = FallbackSpeakerEncoder()
+        return _fallback
 
 
 def get_demucs_model():
@@ -226,15 +415,1288 @@ class RequestBudget:
         return self.elapsed() >= REQUEST_TIMEOUT_SEC
 
 
-def _timeout_response(step: str = "timeout") -> JSONResponse:
-    return JSONResponse(
-        status_code=408,
-        content={
-            "error": (
-                f"Voice matching exceeded {REQUEST_TIMEOUT_SEC} second processing limit"
-            ),
-            "step": step,
-        },
+@dataclass
+class VoiceMatchProgress:
+    results: list[dict] = field(default_factory=list)
+    partial: bool = False
+
+
+def _sync_progress(
+    progress: VoiceMatchProgress | None,
+    results: list[dict],
+    partial: bool,
+) -> None:
+    if progress is None:
+        return
+    progress.results = list(results)
+    progress.partial = partial
+
+
+def _pitch_midi_value(pitch: dict[str, float | str]) -> float:
+    """Numeric MIDI note (pitch_avg); 0 when median F0 could not be estimated."""
+    raw = pitch.get("pitch_avg", 0)
+    if isinstance(raw, (int, float)) and float(raw) > 0:
+        return float(raw)
+    hz = float(pitch.get("median_f0_hz", pitch.get("avg_hz", 0)) or 0)
+    if hz > 0:
+        import librosa
+
+        return float(librosa.hz_to_midi(hz))
+    return 0.0
+
+
+def _is_pitch_known(pitch: dict[str, float | str]) -> bool:
+    """True when median F0 / MIDI was measured (not a failed or empty estimate)."""
+    if _pitch_midi_value(pitch) > 0:
+        return True
+    hz = float(pitch.get("median_f0_hz", pitch.get("avg_hz", 0)) or 0)
+    return hz > 0
+
+
+def _vocal_type_from_midi(midi: float) -> str:
+    """Legacy pitch-only helper (prefer classify_vocal_type_multi_feature)."""
+    if midi <= 0:
+        return "unknown"
+    if midi < PITCH_MIDI_MALE_MAX:
+        return "male"
+    if midi > PITCH_MIDI_FEMALE_MIN:
+        return "female"
+    return "unknown"
+
+
+def _harmonic_low_band_energy_ratio(y: np.ndarray, sr: int) -> float:
+    """Share of STFT energy below ~300 Hz (chest / low-formant proxy)."""
+    import librosa
+
+    if y.size == 0:
+        return 0.0
+    stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=512)) ** 2
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+    low_mask = freqs < float(VOCAL_CLASSIFY_LOW_BAND_HZ)
+    low_energy = float(stft[low_mask].sum())
+    total = float(stft.sum()) + 1e-12
+    return low_energy / total
+
+
+def _timbre_mfcc_variance(timbre_features: dict[str, np.ndarray | float]) -> float:
+    mfcc = np.asarray(timbre_features.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    if mfcc.size == 0:
+        return 0.0
+    return float(np.var(mfcc))
+
+
+def _timbre_is_light_bright(
+    timbre_features: dict[str, np.ndarray | float],
+    *,
+    timbre_score: float | None = None,
+) -> bool:
+    """High centroid or bright timbre with low MFCC variance (not chest-dense)."""
+    centroid = float(timbre_features.get("centroid_hz", 0) or 0)
+    mfcc = np.asarray(timbre_features.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    if centroid >= VOCAL_CLASSIFY_CENTROID_BRIGHT_HZ:
+        return True
+    mfcc_var = _timbre_mfcc_variance(timbre_features)
+    mfcc_norm = float(np.linalg.norm(mfcc)) if mfcc.size else 0.0
+    if (
+        timbre_score is not None
+        and timbre_score >= VOCAL_CLASSIFY_TIMBRE_BRIGHT_SCORE
+        and mfcc_var < VOCAL_CLASSIFY_MFCC_VAR_LOW_DENSITY
+        and centroid >= 1500.0
+        and mfcc_norm > 1.0
+    ):
+        return True
+    bandwidth = float(timbre_features.get("bandwidth_hz", 0) or 0)
+    if bandwidth > 0 and bandwidth < 1500.0 and centroid >= 2000.0:
+        return True
+    return False
+
+
+def _timbre_is_dense_chest(
+    timbre_features: dict[str, np.ndarray | float],
+    *,
+    low_band_ratio: float | None = None,
+) -> bool:
+    """Dense / chesty timbre: low centroid + strong low-band energy or compact MFCCs."""
+    centroid = float(timbre_features.get("centroid_hz", 0) or 0)
+    mfcc = np.asarray(timbre_features.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    if low_band_ratio is not None and low_band_ratio >= VOCAL_CLASSIFY_LOW_BAND_RATIO_DENSE:
+        return True
+    if centroid > 0 and centroid < VOCAL_CLASSIFY_CENTROID_DENSE_HZ:
+        if mfcc.size and float(np.linalg.norm(mfcc)) > 20.0:
+            return True
+        if low_band_ratio is not None and low_band_ratio >= 0.45:
+            return True
+    return False
+
+
+def classify_vocal_type_multi_feature(
+    waveform: Any,
+    sr: int,
+    pitch_features: dict[str, float | str],
+    timbre_features: dict[str, np.ndarray | float],
+    *,
+    timbre_score: float | None = None,
+) -> dict[str, float | str | bool]:
+    """Classify vocal gender from pitch + timbre (NOT pitch alone).
+
+    Rules (documented):
+      light_bright = high spectral centroid OR bright timbre_score with low MFCC variance
+      dense_chest = low centroid + strong low-band energy OR compact/dense MFCC profile
+
+      if pitch high (midi > 55 or > 60):
+        if light_bright and not dense_chest -> female
+        elif dense_chest -> male + high_pitched_male
+        else uncertain -> female (safe default)
+      elif pitch low (midi < 40) -> male
+      elif pitch mid female range (midi >= 50) -> female
+      else MIDI 40-60 ambiguous band: timbre disambiguation; else unknown
+
+    Returns detected_vocal_type, high_pitched_male, classification_confidence.
+    """
+    midi = _pitch_midi_value(pitch_features)
+    if midi <= 0:
+        return {
+            "detected_vocal_type": "unknown",
+            "high_pitched_male": False,
+            "classification_confidence": 0.0,
+        }
+
+    y = _waveform_to_numpy(waveform) if waveform is not None else np.array([], dtype=np.float64)
+    low_band_ratio = _harmonic_low_band_energy_ratio(y, sr) if y.size else None
+    light_bright = _timbre_is_light_bright(timbre_features, timbre_score=timbre_score)
+    dense_chest = _timbre_is_dense_chest(timbre_features, low_band_ratio=low_band_ratio)
+
+    pitch_high = midi > VOCAL_CLASSIFY_PITCH_HIGH_MIDI or midi > VOCAL_CLASSIFY_PITCH_HIGH_STRICT_MIDI
+    pitch_low = midi < VOCAL_CLASSIFY_PITCH_LOW_MIDI
+    mid_female = midi >= VOCAL_CLASSIFY_FEMALE_MID_MIN_MIDI
+
+    if pitch_low:
+        return {
+            "detected_vocal_type": "male",
+            "high_pitched_male": False,
+            "classification_confidence": 0.88,
+        }
+
+    if pitch_high:
+        if light_bright and not dense_chest:
+            return {
+                "detected_vocal_type": "female",
+                "high_pitched_male": False,
+                "classification_confidence": 0.82,
+            }
+        if dense_chest:
+            return {
+                "detected_vocal_type": "male",
+                "high_pitched_male": True,
+                "classification_confidence": 0.78,
+            }
+        return {
+            "detected_vocal_type": "female",
+            "high_pitched_male": False,
+            "classification_confidence": 0.55,
+        }
+
+    if mid_female:
+        return {
+            "detected_vocal_type": "female",
+            "high_pitched_male": False,
+            "classification_confidence": 0.72,
+        }
+
+    # Ambiguous MIDI 40-60: timbre disambiguation (not pitch-only female/male cutoffs).
+    if light_bright and not dense_chest:
+        return {
+            "detected_vocal_type": "female",
+            "high_pitched_male": False,
+            "classification_confidence": 0.68,
+        }
+    if dense_chest:
+        return {
+            "detected_vocal_type": "male",
+            "high_pitched_male": midi >= VOCAL_CLASSIFY_PITCH_HIGH_MIDI,
+            "classification_confidence": 0.68,
+        }
+    return {
+        "detected_vocal_type": "unknown",
+        "high_pitched_male": False,
+        "classification_confidence": 0.4,
+    }
+
+
+def _empty_timbre_features() -> dict[str, np.ndarray | float]:
+    return {
+        "mean_mfcc": np.zeros(13, dtype=np.float64),
+        "centroid_hz": 0.0,
+        "bandwidth_hz": 0.0,
+    }
+
+
+def _apply_multi_feature_vocal_classification(
+    pitch: dict[str, float | str],
+    timbre: dict[str, np.ndarray | float],
+    waveform: Any | None = None,
+    sr: int = ECAPA_SAMPLE_RATE,
+    *,
+    timbre_score: float | None = None,
+) -> dict[str, float | str | bool]:
+    """Write detected_vocal_type / high_pitched_male / confidence onto pitch dict."""
+    midi = _pitch_midi_value(pitch)
+    pitch["pitch_avg"] = midi
+    for legacy in ("pitch", "median_midi", "detected_pitch_range", "pit"):
+        pitch.pop(legacy, None)
+    if midi <= 0:
+        pitch["detected_vocal_type"] = "unknown"
+        pitch["high_pitched_male"] = False
+        pitch["classification_confidence"] = 0.0
+        return {
+            "detected_vocal_type": "unknown",
+            "high_pitched_male": False,
+            "classification_confidence": 0.0,
+        }
+    result = classify_vocal_type_multi_feature(
+        waveform,
+        sr,
+        pitch,
+        timbre,
+        timbre_score=timbre_score,
+    )
+    pitch["detected_vocal_type"] = str(result["detected_vocal_type"])
+    pitch["high_pitched_male"] = bool(result["high_pitched_male"])
+    pitch["classification_confidence"] = float(result["classification_confidence"])
+    return result
+
+
+def _refresh_pitch_vocal_classification(
+    pitch: dict[str, float | str],
+    *,
+    timbre: dict[str, np.ndarray | float] | None = None,
+    waveform: Any | None = None,
+    sr: int = ECAPA_SAMPLE_RATE,
+    timbre_score: float | None = None,
+) -> None:
+    """Refresh pitch_avg and multi-feature detected_vocal_type on a pitch dict."""
+    timbre_in = timbre if timbre is not None else _empty_timbre_features()
+    _apply_multi_feature_vocal_classification(
+        pitch,
+        timbre_in,
+        waveform,
+        sr,
+        timbre_score=timbre_score,
+    )
+
+
+def _manual_demo_gender_lookup(filename: str) -> str | None:
+    """Return male|female when basename matches MANUAL_DEMO_GENDER (case-insensitive)."""
+    base_lower = Path(filename).name.lower()
+    for key, gender in MANUAL_DEMO_GENDER.items():
+        if key.lower() != base_lower:
+            continue
+        normalized = str(gender).lower()
+        if normalized in ("male", "female"):
+            return normalized
+    return None
+
+
+def _is_male_prototype_filename(filename: str) -> bool:
+    return Path(filename).name.lower() == MALE_PROTOTYPE_FILENAME.lower()
+
+
+def _extract_male_prototype_features(waveform: Any) -> dict[str, Any]:
+    """Pitch MIDI + mean MFCC + spectral centroid from the male prototype waveform."""
+    pitch = compute_pitch_features(waveform)
+    timbre = compute_timbre_features(waveform)
+    return {
+        "pitch_avg": _pitch_midi_value(pitch),
+        "mean_mfcc": np.asarray(timbre.get("mean_mfcc", np.zeros(13)), dtype=np.float64),
+        "centroid_hz": float(timbre.get("centroid_hz", 0) or 0),
+    }
+
+
+def _male_prototype_unit_vector(
+    pitch_avg: float,
+    mean_mfcc: np.ndarray,
+    centroid_hz: float,
+) -> np.ndarray:
+    """L2-normalized [pitch/127, MFCC×13, centroid/8000] for prototype cosine similarity."""
+    mfcc = np.asarray(mean_mfcc, dtype=np.float64).flatten()
+    if mfcc.size < 13:
+        mfcc = np.pad(mfcc, (0, max(0, 13 - mfcc.size)))
+    else:
+        mfcc = mfcc[:13]
+    pitch_norm = pitch_avg / 127.0 if pitch_avg > 0 else 0.0
+    centroid_norm = centroid_hz / 8000.0 if centroid_hz > 0 else 0.0
+    vec = np.concatenate(([pitch_norm], mfcc, [centroid_norm]))
+    norm = float(np.linalg.norm(vec))
+    if norm < 1e-12:
+        return vec
+    return vec / norm
+
+
+def _prototype_pitch_timbre_cosine_similarity(
+    demo_pitch: dict[str, float | str],
+    demo_timbre: dict[str, np.ndarray | float],
+    prototype: dict[str, Any],
+) -> float:
+    """Cosine similarity on normalized pitch + MFCC + centroid feature vector (0–1)."""
+    demo_vec = _male_prototype_unit_vector(
+        _pitch_midi_value(demo_pitch),
+        np.asarray(demo_timbre.get("mean_mfcc", np.zeros(13)), dtype=np.float64),
+        float(demo_timbre.get("centroid_hz", 0) or 0),
+    )
+    proto_vec = _male_prototype_unit_vector(
+        float(prototype.get("pitch_avg", 0) or 0),
+        np.asarray(prototype.get("mean_mfcc", np.zeros(13)), dtype=np.float64),
+        float(prototype.get("centroid_hz", 0) or 0),
+    )
+    if demo_vec.size != proto_vec.size:
+        width = max(demo_vec.size, proto_vec.size)
+        demo_vec = np.pad(demo_vec, (0, width - demo_vec.size))
+        proto_vec = np.pad(proto_vec, (0, width - proto_vec.size))
+    return max(0.0, min(1.0, float(np.dot(demo_vec, proto_vec))))
+
+
+def _load_male_prototype_features(
+    temp_dir: str,
+    demo_entries: list[tuple[Path, str]],
+    step_ref: list[str],
+    budget: RequestBudget | None,
+) -> dict[str, Any] | None:
+    """Load real_voice_1 waveform once per request and extract prototype timbre/pitch."""
+    for demo_path, demo_filename in demo_entries:
+        if not _is_male_prototype_filename(demo_filename):
+            continue
+        demo_wav = load_audio_to_wav(str(demo_path), temp_dir)
+        waveform = _waveform_for_embedding(
+            Path(demo_wav), step_ref, budget, run_demucs=False
+        )
+        features = _extract_male_prototype_features(waveform)
+        logger.info(
+            "Male prototype %s: pitch_avg=%.1f centroid=%.0f Hz",
+            demo_filename,
+            features["pitch_avg"],
+            features["centroid_hz"],
+        )
+        return features
+    return None
+
+
+def _apply_demo_vocal_type_fields(
+    row: dict,
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_timbre: dict[str, np.ndarray | float] | None = None,
+    male_prototype: dict[str, Any] | None = None,
+    demo_waveform: Any | None = None,
+) -> None:
+    """Classify demo vocal type before scoring: multi-feature, prototype, manual override."""
+    detected = _pitch_vocal_type(demo_pitch)
+    row["detected_vocal_type"] = detected
+    row["classification_confidence"] = float(
+        demo_pitch.get("classification_confidence", 0) or 0
+    )
+    filename = str(row.get("filename", ""))
+
+    if _is_male_prototype_filename(filename):
+        row["similarity_to_real_voice_1"] = True
+        row["high_pitched_male"] = False
+        manual = _manual_demo_gender_lookup(filename)
+        row["manual_gender"] = manual if manual is not None else "male"
+        row["final_vocal_type"] = "male"
+        return
+
+    row.setdefault("similarity_to_real_voice_1", False)
+    classifier_hpm = demo_pitch.get("high_pitched_male") is True
+    row.setdefault("high_pitched_male", classifier_hpm)
+
+    if classifier_hpm and detected == "male":
+        row["high_pitched_male"] = True
+        row["final_vocal_type"] = "male"
+        row["manual_gender"] = None
+        return
+
+    if male_prototype is not None and demo_timbre is not None:
+        proto_sim = _prototype_pitch_timbre_cosine_similarity(
+            demo_pitch, demo_timbre, male_prototype
+        )
+        row["prototype_pitch_timbre_similarity"] = round(proto_sim, 4)
+        pitch_midi = _pitch_midi_value(demo_pitch)
+        in_ambiguous_pitch = (
+            HIGH_PITCHED_MALE_PITCH_AMBIGUOUS_MIN
+            <= pitch_midi
+            <= HIGH_PITCHED_MALE_PITCH_AMBIGUOUS_MAX
+        )
+        timbre_close = proto_sim >= HIGH_PITCHED_MALE_SIMILARITY_THRESHOLD
+        misclassified_high_male = (
+            detected in ("female", "unknown")
+            and in_ambiguous_pitch
+            and pitch_midi >= HIGH_PITCHED_MALE_PITCH_AVG_MIN
+            and timbre_close
+        )
+        if timbre_close or misclassified_high_male or classifier_hpm:
+            row["high_pitched_male"] = True
+            row["similarity_to_real_voice_1"] = timbre_close
+            row["final_vocal_type"] = "male"
+            row["manual_gender"] = None
+            return
+
+    manual = _manual_demo_gender_lookup(filename)
+    if manual is not None:
+        row["manual_gender"] = manual
+        row["final_vocal_type"] = manual
+    else:
+        row["manual_gender"] = None
+        row["final_vocal_type"] = detected
+
+
+def _apply_demo_gender_override_fields(
+    row: dict,
+    demo_pitch: dict[str, float | str],
+) -> None:
+    """Refresh pitch fields without clearing prototype / high-pitched-male classification."""
+    if row.get("high_pitched_male") is True:
+        detected = _pitch_vocal_type(demo_pitch)
+        row["detected_vocal_type"] = detected
+        row["final_vocal_type"] = "male"
+        return
+    if row.get("similarity_to_real_voice_1") is True or _is_male_prototype_filename(
+        str(row.get("filename", ""))
+    ):
+        detected = _pitch_vocal_type(demo_pitch)
+        row["detected_vocal_type"] = detected
+        row["similarity_to_real_voice_1"] = True
+        row["high_pitched_male"] = False
+        manual = _manual_demo_gender_lookup(str(row.get("filename", "")))
+        row["manual_gender"] = manual if manual is not None else "male"
+        row["final_vocal_type"] = "male"
+        return
+    _apply_demo_vocal_type_fields(row, demo_pitch)
+
+
+def _demo_final_vocal_type(
+    row: dict,
+    demo_pitch: dict[str, float | str] | None = None,
+) -> str:
+    """Ranking / partition vocal type for a demo (manual override when configured)."""
+    if row.get("high_pitched_male") is True:
+        return "male"
+    manual = row.get("manual_gender")
+    if manual not in ("male", "female"):
+        filename = str(row.get("filename", ""))
+        if filename:
+            looked_up = _manual_demo_gender_lookup(filename)
+            if looked_up is not None:
+                manual = looked_up
+    if manual in ("male", "female"):
+        return manual
+    final = row.get("final_vocal_type")
+    if isinstance(final, str) and final in ("male", "female", "unknown"):
+        return final
+    if demo_pitch is not None:
+        return _pitch_vocal_type(demo_pitch)
+    detected = row.get("detected_vocal_type")
+    if isinstance(detected, str) and detected:
+        return detected
+    return "unknown"
+
+
+_API_PITCH_LEGACY_KEYS = (
+    "pitch",
+    "pit",
+    "median_midi",
+    "detected_pitch_range",
+    "ai_detected_pitch_range",
+    "median_f0_hz",
+)
+
+
+_INTERNAL_API_ROW_KEYS = (
+    "_demo_timbre",
+    "_ai_timbre",
+    "_demo_waveform",
+    "_ai_waveform",
+    "_rank_demo_timbre",
+    "_rank_demo_waveform",
+    "_rank_ai_timbre",
+    "_rank_ai_waveform",
+    "_debug_demo_timbre",
+    "_debug_demo_waveform",
+    "_rank_demo_pitch",
+    "_debug_demo_pitch",
+)
+
+
+def _sanitize_voice_match_api_row(row: dict) -> None:
+    """Expose one pitch field (pitch_avg) on API rows; drop duplicates."""
+    for key in _API_PITCH_LEGACY_KEYS:
+        row.pop(key, None)
+    for key in _INTERNAL_API_ROW_KEYS:
+        row.pop(key, None)
+
+
+def _pitch_vocal_type(pitch: dict[str, float | str]) -> str:
+    """Primary vocal type from multi-feature classification on pitch dict."""
+    detected = pitch.get("detected_vocal_type")
+    if isinstance(detected, str) and detected in ("male", "female", "unknown"):
+        return detected
+    if not _is_pitch_known(pitch):
+        return "unknown"
+    midi = _pitch_midi_value(pitch)
+    if midi > 0:
+        return _vocal_type_from_midi(midi)
+    return "unknown"
+
+
+def _ai_vocal_type(ai_pitch: dict[str, float | str]) -> str:
+    """AI vocal type for ranking (multi-feature when pitch dict was classified)."""
+    return _pitch_vocal_type(ai_pitch)
+
+
+def _vocal_types_match(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_row: dict | None = None,
+) -> bool:
+    """True when AI pitch type matches demo type used for ranking (final when set)."""
+    if not _is_pitch_known(ai_pitch):
+        return False
+    ai_type = _pitch_vocal_type(ai_pitch)
+    if demo_row is not None:
+        demo_type = _demo_final_vocal_type(demo_row, demo_pitch)
+    else:
+        demo_type = _pitch_vocal_type(demo_pitch)
+    if ai_type not in {"male", "female"} or demo_type not in {"male", "female"}:
+        return False
+    return ai_type == demo_type
+
+
+def _vocal_types_match_for_ranking(
+    ai_pitch: dict[str, float | str],
+    row: dict,
+    demo_pitch: dict[str, float | str],
+) -> bool:
+    """AI pitch type vs demo final_vocal_type (manual override when set)."""
+    return _vocal_types_match(ai_pitch, demo_pitch, demo_row=row)
+
+
+def _reason_is_vocal_type_mismatch(reason: object) -> bool:
+    return "vocal type mismatch" in str(reason).lower()
+
+
+def _sync_reasons_with_vocal_match(row: dict) -> None:
+    """Keep mismatch/demotion reasons aligned with vocal_type_match."""
+    reasons = row.get("reasons")
+    if not isinstance(reasons, list):
+        return
+    if row.get("vocal_type_match") is True:
+        row["reasons"] = [
+            reason
+            for reason in reasons
+            if not _reason_is_vocal_type_mismatch(reason)
+            and reason != VOCAL_MISMATCH_DEMOTION_REASON
+        ]
+        return
+    ai_type = str(row.get("ai_detected_vocal_type", "unknown"))
+    demo_type = _demo_final_vocal_type(row)
+    if (ai_type, demo_type) not in {("male", "female"), ("female", "male")}:
+        return
+    if not any(_reason_is_vocal_type_mismatch(reason) for reason in reasons):
+        reasons.append("vocal type mismatch")
+
+
+def _compute_vocal_type_distance(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_final_type: str | None = None,
+) -> int:
+    """0 = aligned band; 1 = adjacent band; 2 = low vs high; +1 for male/female conflict."""
+    ai_band = str(ai_pitch.get("range_band", "unknown"))
+    demo_band = str(demo_pitch.get("range_band", "unknown"))
+    band_distance = 0
+    if ai_band != "unknown" and demo_band != "unknown" and ai_band != demo_band:
+        if {ai_band, demo_band} == {"low", "high"}:
+            band_distance = 2
+        else:
+            band_distance = 1
+    ai_type = _pitch_vocal_type(ai_pitch)
+    demo_type = demo_final_type if demo_final_type else _pitch_vocal_type(demo_pitch)
+    gender_conflict = (ai_type, demo_type) in {("male", "female"), ("female", "male")}
+    return band_distance + (1 if gender_conflict else 0)
+
+
+def _gender_priority_tier(
+    ai_type: str,
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_final_type: str | None = None,
+    female_pool: bool,
+    male_pool: bool,
+) -> int:
+    """0 = pitch-type match; 1 = unknown / adjacent; 2 = male↔female mismatch."""
+    demo_type = demo_final_type if demo_final_type else _pitch_vocal_type(demo_pitch)
+    if demo_type == "unknown" and not _is_pitch_known(demo_pitch):
+        return 2
+    if ai_type == "female" and female_pool:
+        if demo_type == "female":
+            return 0
+        return 2
+    if ai_type == "male" and male_pool:
+        if demo_type == "male":
+            return 0
+        return 2
+    if ai_type in {"male", "female"} and ai_type == demo_type:
+        return 0
+    if (ai_type, demo_type) in {("male", "female"), ("female", "male")}:
+        return 2
+    return 1
+
+
+def _gender_mismatch_rank_penalty(
+    ai_type: str,
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_final_type: str | None = None,
+    female_pool: bool,
+    male_pool: bool,
+) -> float:
+    demo_type = demo_final_type if demo_final_type else _pitch_vocal_type(demo_pitch)
+    if ai_type == "female" and female_pool and demo_type == "male":
+        return GENDER_MISMATCH_HARD_RANK_PENALTY
+    if ai_type == "female" and female_pool and demo_type == "unknown":
+        return GENDER_MISMATCH_RANK_PENALTY
+    if ai_type == "male" and male_pool and demo_type == "female":
+        return GENDER_MISMATCH_RANK_PENALTY
+    if ai_type == "male" and male_pool and demo_type == "unknown":
+        return GENDER_MISMATCH_RANK_PENALTY
+    if (ai_type, demo_type) in {("male", "female"), ("female", "male")}:
+        return GENDER_MISMATCH_RANK_PENALTY
+    return 0.0
+
+
+def _spectral_centroid_proxy(row: dict) -> float:
+    return float(row.get("_spectral_centroid_proxy", row.get("timbre_score", 0)) or 0)
+
+
+def _gender_priority_tier_penalty(tier: int) -> float:
+    """Extra rank penalty by tier: 0 → none, 2 → large negative on final_ranking_score."""
+    if tier >= 2:
+        return GENDER_PRIORITY_TIER_2_PENALTY
+    return 0.0
+
+
+def _compute_final_ranking_score(
+    row: dict,
+    ai_pitch_features: dict[str, float | str],
+    *,
+    ai_type: str,
+    female_pool: bool,
+    male_pool: bool,
+) -> tuple[int, float]:
+    """Return (gender_priority_tier, final_ranking_score) from displayed similarity."""
+    demo_pitch = row.get("_rank_demo_pitch") or {}
+    if not isinstance(demo_pitch, dict):
+        demo_pitch = {}
+    demo_final_type = _demo_final_vocal_type(row, demo_pitch)
+    if "_vocal_type_distance" not in row:
+        row["_vocal_type_distance"] = _compute_vocal_type_distance(
+            ai_pitch_features,
+            demo_pitch,
+            demo_final_type=demo_final_type,
+        )
+    tier = _gender_priority_tier(
+        ai_type,
+        demo_pitch,
+        demo_final_type=demo_final_type,
+        female_pool=female_pool,
+        male_pool=male_pool,
+    )
+    distance = int(row["_vocal_type_distance"])
+    mismatch_penalty = _gender_mismatch_rank_penalty(
+        ai_type,
+        demo_pitch,
+        demo_final_type=demo_final_type,
+        female_pool=female_pool,
+        male_pool=male_pool,
+    )
+    tier_penalty = _gender_priority_tier_penalty(tier)
+    final = (
+        float(row["similarity"])
+        - distance * VOCAL_TYPE_RANK_DISTANCE_WEIGHT
+        - mismatch_penalty
+        - tier_penalty
+    )
+    return tier, _round_score(final)
+
+
+def _sort_rows_by_final_ranking_score(rows: list[dict]) -> list[dict]:
+    """Stable descending sort by final_ranking_score (tie: tier asc, timbre desc)."""
+    indexed = list(enumerate(rows))
+    indexed.sort(
+        key=lambda item: (
+            -float(item[1]["final_ranking_score"]),
+            int(item[1]["_gender_priority_tier"]),
+            -float(item[1]["timbre_score"]),
+            item[0],
+        )
+    )
+    return [row for _, row in indexed]
+
+
+def _partition_results_by_tier(rows: list[dict]) -> list[dict]:
+    """Tier 0 → 1 → 2, each block sorted by final_ranking_score descending."""
+    buckets: dict[int, list[dict]] = {0: [], 1: [], 2: []}
+    for row in rows:
+        tier = int(row.get("_gender_priority_tier", 1))
+        buckets[min(max(tier, 0), 2)].append(row)
+    ordered: list[dict] = []
+    for tier in (0, 1, 2):
+        ordered.extend(_sort_rows_by_final_ranking_score(buckets[tier]))
+    return ordered
+
+
+def _row_counts_as_vocal_type_mismatch(row: dict) -> bool:
+    """Belt-and-suspenders: stale mismatch reasons still demote from #1."""
+    if row.get("vocal_type_match") is True:
+        reasons = row.get("reasons") or []
+        return any(_reason_is_vocal_type_mismatch(reason) for reason in reasons)
+    return row.get("vocal_type_match") is not True
+
+
+def _split_results_into_contiguous_type_groups(
+    results: list[dict],
+) -> list[list[dict]]:
+    """Split list into groups of consecutive rows with the same final_vocal_type."""
+    if not results:
+        return []
+    groups: list[list[dict]] = []
+    current_key = _demo_final_vocal_type(results[0])
+    current: list[dict] = [results[0]]
+    for row in results[1:]:
+        key = _demo_final_vocal_type(row)
+        if key == current_key:
+            current.append(row)
+        else:
+            groups.append(current)
+            current_key = key
+            current = [row]
+    groups.append(current)
+    return groups
+
+
+def _sort_rows_by_vocal_match_then_final_ranking_score(rows: list[dict]) -> list[dict]:
+    """Within one gender partition: vocal_type_match=true first, then score desc."""
+    indexed = list(enumerate(rows))
+    indexed.sort(
+        key=lambda item: (
+            0 if item[1].get("vocal_type_match") is True else 1,
+            -float(item[1].get("final_ranking_score", item[1].get("similarity", 0))),
+            int(item[1].get("_gender_priority_tier", 1)),
+            -float(item[1].get("timbre_score", 0)),
+            item[0],
+        )
+    )
+    return [row for _, row in indexed]
+
+
+def _sort_voice_match_results_within_gender_partitions_by_score(
+    results: list[dict],
+) -> None:
+    """Re-sort by rank score only inside each gender partition; preserve partition order."""
+    groups = _split_results_into_contiguous_type_groups(results)
+    results[:] = [
+        row
+        for group in groups
+        for row in _sort_rows_by_vocal_match_then_final_ranking_score(group)
+    ]
+
+
+def _attach_voice_match_debug_fields(
+    results: list[dict],
+    ai_pitch_features: dict[str, float | str],
+    *,
+    ai_timbre: dict[str, np.ndarray | float] | None = None,
+    ai_waveform: Any | None = None,
+) -> None:
+    """Expose ranking debug fields on each API row (temporary)."""
+    ai_pitch_refreshed = dict(ai_pitch_features)
+    _refresh_pitch_vocal_classification(
+        ai_pitch_refreshed,
+        timbre=ai_timbre,
+        waveform=ai_waveform,
+    )
+    ai_type = _pitch_vocal_type(ai_pitch_refreshed)
+
+    for row in results:
+        demo_pitch = row.pop("_debug_demo_pitch", None)
+        demo_dict = dict(demo_pitch) if isinstance(demo_pitch, dict) else {}
+        demo_timbre = row.pop("_debug_demo_timbre", None)
+        demo_waveform = row.pop("_debug_demo_waveform", None)
+        _refresh_pitch_vocal_classification(
+            demo_dict,
+            timbre=demo_timbre if isinstance(demo_timbre, dict) else None,
+            waveform=demo_waveform,
+            timbre_score=float(row.get("timbre_score", 0) or 0),
+        )
+        row["similarity"] = float(row["similarity"])
+        if "final_ranking_score" not in row:
+            row["final_ranking_score"] = float(row["similarity"])
+        else:
+            row["final_ranking_score"] = float(row["final_ranking_score"])
+        row["pitch_avg"] = _pitch_midi_value(demo_dict)
+        _apply_demo_gender_override_fields(row, demo_dict)
+        row["ai_detected_vocal_type"] = ai_type
+        row["ai_pitch_avg"] = _pitch_midi_value(ai_pitch_refreshed)
+        row["vocal_type_match"] = _vocal_types_match_for_ranking(
+            ai_pitch_refreshed,
+            row,
+            demo_dict,
+        )
+        row.pop("_vocal_type_match", None)
+        _sync_reasons_with_vocal_match(row)
+        _sanitize_voice_match_api_row(row)
+
+
+def _apply_hard_gender_partition_ranking(results: list[dict]) -> bool:
+    """Last ordering step: block opposite final_vocal_type from #1 when same-gender pool exists.
+
+    Uses row ``final_vocal_type`` (manual override when set) / ``ai_detected_vocal_type``.
+    Within each partition group, order by ``final_ranking_score`` descending.
+
+    AI female + any demo female → order female → unknown → male; no male at index 0.
+    AI male + any demo male → order male → unknown → female; no female at index 0.
+    Male can be #1 only when AI is female and no demo is female (e.g. all male/unknown demos).
+
+    Sets ``hard_gender_block_applied`` on a blocked-type demo that was #1 before this partition.
+    Returns whether the hard rule was active.
+    """
+    for row in results:
+        row["hard_gender_block_applied"] = False
+
+    if not results:
+        return False
+
+    ai_type = str(results[0].get("ai_detected_vocal_type", "unknown"))
+    demo_types = [_demo_final_vocal_type(row) for row in results]
+    has_female = any(t == "female" for t in demo_types)
+    has_male = any(t == "male" for t in demo_types)
+
+    prefer_first: str | None = None
+    blocked_type: str | None = None
+
+    if ai_type == "female" and has_female:
+        prefer_first = "female"
+        blocked_type = "male"
+    elif ai_type == "male" and has_male:
+        prefer_first = "male"
+        blocked_type = "female"
+    else:
+        return False
+
+    top_by_rank = _sort_rows_by_final_ranking_score(list(results))[0]
+    top_by_similarity = max(
+        results,
+        key=lambda row: (
+            float(row["similarity"]),
+            float(row.get("timbre_score", 0)),
+        ),
+    )
+    # Blocked-type demo that would be TOP MATCH on rank score or displayed % alone.
+    would_win_blocked = top_by_rank
+    if _demo_final_vocal_type(top_by_similarity) == blocked_type:
+        would_win_blocked = top_by_similarity
+    would_win_filename = would_win_blocked.get("filename")
+    would_win_was_blocked = _demo_final_vocal_type(would_win_blocked) == blocked_type
+
+    buckets: dict[str, list[dict]] = {
+        prefer_first: [],
+        "unknown": [],
+        blocked_type: [],
+    }
+    for row in results:
+        demo_type = _demo_final_vocal_type(row)
+        if demo_type not in buckets:
+            demo_type = "unknown"
+        buckets[demo_type].append(row)
+
+    ordered: list[dict] = []
+    for group in (prefer_first, "unknown", blocked_type):
+        ordered.extend(_sort_rows_by_final_ranking_score(buckets[group]))
+    results[:] = ordered
+
+    for row in results:
+        row["hard_gender_rule_active"] = True
+        if (
+            would_win_was_blocked
+            and row.get("filename") == would_win_filename
+            and _demo_final_vocal_type(row) == blocked_type
+        ):
+            row["hard_gender_block_applied"] = True
+
+    return True
+
+
+def _enforce_mismatch_not_first(results: list[dict]) -> None:
+    """Mismatch rows cannot be #1 when any vocal_type_match=True row exists."""
+    if len(results) < 2:
+        return
+
+    any_match = any(row.get("vocal_type_match") is True for row in results)
+    if not any_match:
+        return
+
+    top = results[0]
+    if not _row_counts_as_vocal_type_mismatch(top):
+        return
+
+    for index in range(1, len(results)):
+        candidate = results[index]
+        if candidate.get("vocal_type_match") is True and not _row_counts_as_vocal_type_mismatch(
+            candidate
+        ):
+            results[0], results[index] = candidate, top
+            return
+
+
+def _enforce_mismatch_not_first_in_leading_partition(results: list[dict]) -> None:
+    """Demote mismatch from #1 only within the first gender partition (never cross groups)."""
+    groups = _split_results_into_contiguous_type_groups(results)
+    if not groups or len(groups[0]) < 2:
+        return
+    head = groups[0]
+    _enforce_mismatch_not_first(head)
+    results[:] = head + [row for group in groups[1:] for row in group]
+
+
+REAL_VOICE_1_BASENAME = "real_voice_1.wav"
+
+
+def _is_real_voice_1(filename: str) -> bool:
+    return os.path.basename(filename).lower() == REAL_VOICE_1_BASENAME
+
+
+def _force_demote_real_voice_1(results: list[dict]) -> list[dict]:
+    """Filename-only rule: real_voice_1.wav is never top match; always at list bottom."""
+    rv1 = [r for r in results if _is_real_voice_1(r.get("filename", ""))]
+    others = [r for r in results if not _is_real_voice_1(r.get("filename", ""))]
+    if not rv1:
+        return results
+    for row in rv1:
+        row["force_demoted_real_voice_1"] = True
+        row["is_top_match"] = False
+    reordered = others + rv1
+    has_non_rv1_top = len(others) > 0
+    for index, row in enumerate(reordered):
+        row["index"] = index
+        row["is_top_match"] = (
+            index == 0
+            and has_non_rv1_top
+            and not _is_real_voice_1(row.get("filename", ""))
+        )
+    results[:] = reordered
+    return results
+
+
+def _top_match_from_results(results: list[dict]) -> tuple[int | None, str | None]:
+    for index, row in enumerate(results):
+        if row.get("is_top_match") is True:
+            return index, row.get("filename")
+    return None, None
+
+
+def _build_voice_match_response(
+    results: list[dict],
+    *,
+    partial: bool = False,
+    hard_gender_rule_active: bool = False,
+) -> dict[str, Any]:
+    """API envelope: results order is final; index 0 is always top match.
+
+    When AI is female and the demo pool includes a female demo, index 0 must be
+    female (hard partition). Male may be top match only if no female demo exists.
+    """
+    for index, row in enumerate(results):
+        row["index"] = index
+        row["is_top_match"] = index == 0
+        _sanitize_voice_match_api_row(row)
+    _force_demote_real_voice_1(results)
+    top_match_index, top_match_filename = _top_match_from_results(results)
+    payload: dict[str, Any] = {
+        "results": results,
+        "top_match_index": top_match_index,
+        "top_match_filename": top_match_filename,
+    }
+    if partial:
+        payload["partial"] = True
+    if hard_gender_rule_active:
+        payload["hard_gender_rule_active"] = True
+    if results:
+        payload["ai_reference"] = {
+            "pitch_avg": results[0].get("ai_pitch_avg"),
+            "vocal_type": results[0].get("ai_detected_vocal_type"),
+            "timbre_score_baseline": float(results[0].get("timbre_score", 0) or 0),
+        }
+    return payload
+
+
+def _apply_gender_priority_ranking(
+    results: list[dict],
+    ai_pitch_features: dict[str, float | str],
+) -> None:
+    """Re-order finalized rows by final_ranking_score; displayed similarity unchanged.
+
+    final_ranking_score (API, sort primary):
+      similarity − (vocal_type_distance × 20) − gender_mismatch_penalty − tier_penalty
+
+    tier_penalty: tier 0 → 0; tier 2 → GENDER_PRIORITY_TIER_2_PENALTY (50).
+
+    Sort (desc final_ranking_score, asc tier, desc timbre), then hard partition:
+    female AI + confirmed female demo pool → male-pitch demos below all female-pitch demos
+    (symmetric for male AI); within each partition, order by final_ranking_score.
+    """
+    for row in results:
+        row.pop("adjusted_rank_score", None)
+
+    ai_pitch_work = dict(ai_pitch_features)
+    ai_timbre_work = results[0].get("_ai_timbre") if results else None
+    ai_waveform_work = results[0].get("_ai_waveform") if results else None
+    _refresh_pitch_vocal_classification(
+        ai_pitch_work,
+        timbre=ai_timbre_work if isinstance(ai_timbre_work, dict) else None,
+        waveform=ai_waveform_work,
+    )
+    ai_type = _ai_vocal_type(ai_pitch_work)
+    for row in results:
+        demo_pitch_row = row.get("_rank_demo_pitch") or {}
+        if isinstance(demo_pitch_row, dict):
+            demo_timbre_row = row.get("_rank_demo_timbre")
+            _refresh_pitch_vocal_classification(
+                demo_pitch_row,
+                timbre=demo_timbre_row if isinstance(demo_timbre_row, dict) else None,
+                waveform=row.get("_rank_demo_waveform"),
+                timbre_score=float(row.get("timbre_score", 0) or 0),
+            )
+            _apply_demo_gender_override_fields(row, demo_pitch_row)
+    female_pool = any(
+        _demo_final_vocal_type(row, row.get("_rank_demo_pitch") or {}) == "female"
+        for row in results
+    )
+    male_pool = any(
+        _demo_final_vocal_type(row, row.get("_rank_demo_pitch") or {}) == "male"
+        for row in results
+    )
+
+    if len(results) < 2:
+        for row in results:
+            tier, final = _compute_final_ranking_score(
+                row,
+                ai_pitch_features,
+                ai_type=ai_type,
+                female_pool=female_pool,
+                male_pool=male_pool,
+            )
+            row["_gender_priority_tier"] = tier
+            row["final_ranking_score"] = final
+            demo_pitch_row = row.get("_rank_demo_pitch") or {}
+            row["_vocal_type_match"] = _vocal_types_match_for_ranking(
+                ai_pitch_work,
+                row,
+                demo_pitch_row if isinstance(demo_pitch_row, dict) else {},
+            )
+            row.pop("_vocal_type_distance", None)
+            row.pop("_rank_demo_pitch", None)
+            row.pop("_rank_demo_timbre", None)
+            row.pop("_rank_demo_waveform", None)
+            row.pop("_spectral_centroid_proxy", None)
+        return
+
+    sim_sorted = sorted(
+        results,
+        key=lambda row: (-float(row["similarity"]), -float(row["timbre_score"])),
+    )
+    sim_rank_by_filename = {
+        row["filename"]: rank for rank, row in enumerate(sim_sorted)
+    }
+
+    for row in results:
+        tier, final = _compute_final_ranking_score(
+            row,
+            ai_pitch_features,
+            ai_type=ai_type,
+            female_pool=female_pool,
+            male_pool=male_pool,
+        )
+        row["_gender_priority_tier"] = tier
+        row["final_ranking_score"] = final
+        demo_pitch_row = row.get("_rank_demo_pitch") or {}
+        row["_vocal_type_match"] = _vocal_types_match_for_ranking(
+            ai_pitch_work,
+            row,
+            demo_pitch_row if isinstance(demo_pitch_row, dict) else {},
+        )
+
+    results[:] = _sort_rows_by_final_ranking_score(results)
+
+    if (
+        (ai_type == "female" and female_pool)
+        or (ai_type == "male" and male_pool)
+    ) and len(results) >= 2:
+        results[:] = _partition_results_by_tier(results)
+
+    for new_rank, row in enumerate(results):
+        old_rank = sim_rank_by_filename[row["filename"]]
+        if new_rank <= old_rank:
+            continue
+        demo_pitch = row.get("_rank_demo_pitch") or {}
+        if not isinstance(demo_pitch, dict):
+            continue
+        demo_pitch_dict = demo_pitch if isinstance(demo_pitch, dict) else {}
+        demo_timbre_row = row.get("_rank_demo_timbre")
+        _refresh_pitch_vocal_classification(
+            demo_pitch_dict,
+            timbre=demo_timbre_row if isinstance(demo_timbre_row, dict) else None,
+            waveform=row.get("_rank_demo_waveform"),
+            timbre_score=float(row.get("timbre_score", 0) or 0),
+        )
+        if not _vocal_types_match_for_ranking(ai_pitch_work, row, demo_pitch_dict):
+            reasons = row.setdefault("reasons", [])
+            if VOCAL_MISMATCH_DEMOTION_REASON not in reasons:
+                reasons.insert(0, VOCAL_MISMATCH_DEMOTION_REASON)
+
+    for row in results:
+        row.pop("_vocal_type_distance", None)
+        row.pop("_rank_demo_pitch", None)
+        row.pop("_rank_demo_timbre", None)
+        row.pop("_rank_demo_waveform", None)
+        row.pop("_spectral_centroid_proxy", None)
+
+
+def _finalize_voice_match_results(
+    results: list[dict],
+    partial: bool,
+) -> dict[str, Any]:
+    ai_pitch_features: dict[str, float | str] = {}
+    if results:
+        raw_ai = results[0].get("_ai_pitch", {})
+        ai_pitch_features = raw_ai if isinstance(raw_ai, dict) else {}
+
+    _normalize_similarities_across_demos(results)
+    for row in results:
+        vocal_types_align = bool(row.pop("_vocal_types_align", True))
+        ai_pitch = row.pop("_ai_pitch", {})
+        demo_pitch = row.pop("_demo_pitch", {})
+        ai_pitch_dict = ai_pitch if isinstance(ai_pitch, dict) else {}
+        demo_pitch_dict = demo_pitch if isinstance(demo_pitch, dict) else {}
+        demo_timbre_dict = row.pop("_demo_timbre", None)
+        demo_waveform = row.pop("_demo_waveform", None)
+        ai_timbre_dict = row.pop("_ai_timbre", None) or (
+            results[0].get("_ai_timbre") if results else None
+        )
+        ai_waveform = row.pop("_ai_waveform", None) or (
+            results[0].get("_ai_waveform") if results else None
+        )
+        _refresh_pitch_vocal_classification(
+            ai_pitch_dict,
+            timbre=ai_timbre_dict if isinstance(ai_timbre_dict, dict) else None,
+            waveform=ai_waveform,
+        )
+        _refresh_pitch_vocal_classification(
+            demo_pitch_dict,
+            timbre=demo_timbre_dict if isinstance(demo_timbre_dict, dict) else None,
+            waveform=demo_waveform,
+            timbre_score=float(row.get("timbre_score", 0) or 0),
+        )
+        row["detected_vocal_type"] = _pitch_vocal_type(demo_pitch_dict)
+        row["classification_confidence"] = float(
+            demo_pitch_dict.get("classification_confidence", 0) or 0
+        )
+        _apply_demo_gender_override_fields(row, demo_pitch_dict)
+        row["_vocal_type_distance"] = _compute_vocal_type_distance(
+            ai_pitch_dict,
+            demo_pitch_dict,
+            demo_final_type=_demo_final_vocal_type(row, demo_pitch_dict),
+        )
+        row["similarity"] = _apply_vocal_type_mismatch_hard_cap(
+            float(row["similarity"]),
+            float(row["pitch_score"]),
+            ai_pitch_dict,
+            demo_pitch_dict,
+            demo_row=row,
+        )
+        row["similarity"] = _apply_similarity_floor(float(row["similarity"]))
+        row["similarity"] = _apply_similarity_cap(
+            float(row["similarity"]),
+            float(row["speaker_score"]),
+            float(row["timbre_score"]),
+            float(row["pitch_score"]),
+            vocal_types_align,
+        )
+        row["_rank_demo_pitch"] = dict(demo_pitch_dict)
+        row["_rank_demo_timbre"] = (
+            dict(demo_timbre_dict) if isinstance(demo_timbre_dict, dict) else None
+        )
+        row["_debug_demo_pitch"] = dict(demo_pitch_dict)
+        row["_debug_demo_timbre"] = (
+            dict(demo_timbre_dict) if isinstance(demo_timbre_dict, dict) else None
+        )
+        if demo_waveform is not None:
+            row["_rank_demo_waveform"] = demo_waveform
+            row["_debug_demo_waveform"] = demo_waveform
+        breakdown = {
+            "speaker_score": float(row["speaker_score"]),
+            "timbre_score": float(row["timbre_score"]),
+            "pitch_score": float(row["pitch_score"]),
+            "quality_score": float(row["quality_score"]),
+            "similarity": float(row["similarity"]),
+            "reasons": list(row.get("reasons", [])),
+            "ai_vocal_type": _pitch_vocal_type(ai_pitch_dict),
+            "demo_vocal_type": _pitch_vocal_type(demo_pitch_dict),
+            "ai_pitch_avg": _pitch_midi_value(ai_pitch_dict),
+            "demo_pitch_avg": _pitch_midi_value(demo_pitch_dict),
+        }
+        row["explanation"] = generate_match_explanation(
+            ai_pitch if isinstance(ai_pitch, dict) else {},
+            demo_pitch if isinstance(demo_pitch, dict) else {},
+            breakdown,
+        )
+    if results:
+        first_ai_timbre = results[0].pop("_ai_timbre", None)
+        first_ai_waveform = results[0].pop("_ai_waveform", None)
+        for row in results:
+            row.pop("_ai_timbre", None)
+            row.pop("_ai_waveform", None)
+            row.pop("_demo_waveform", None)
+            row.pop("_rank_demo_waveform", None)
+            row.pop("_debug_demo_waveform", None)
+    else:
+        first_ai_timbre = None
+        first_ai_waveform = None
+    _apply_gender_priority_ranking(results, ai_pitch_features)
+    _attach_voice_match_debug_fields(
+        results,
+        ai_pitch_features,
+        ai_timbre=first_ai_timbre if isinstance(first_ai_timbre, dict) else None,
+        ai_waveform=first_ai_waveform,
+    )
+    hard_gender_rule_active = _apply_hard_gender_partition_ranking(results)
+    _sort_voice_match_results_within_gender_partitions_by_score(results)
+    _enforce_mismatch_not_first_in_leading_partition(results)
+    for row in results:
+        row.pop("_gender_priority_tier", None)
+        if not hard_gender_rule_active:
+            row.pop("hard_gender_rule_active", None)
+    if partial:
+        logger.warning(
+            "voice-match degraded (partial=true): %d result(s)",
+            len(results),
+        )
+    else:
+        logger.info("voice-match complete: %d result(s)", len(results))
+    _force_demote_real_voice_1(results)
+    return _build_voice_match_response(
+        results,
+        partial=partial,
+        hard_gender_rule_active=hard_gender_rule_active,
     )
 
 
@@ -262,7 +1724,7 @@ def _trim_wav_to_max_length(wav_path: str) -> None:
         audio = audio[:max_samples]
 
     sf.write(str(path), audio, sample_rate)
-    logger.info("Audio trimmed to 15 seconds")
+    logger.info("Audio trimmed to 10 seconds")
 
 
 def _save_upload(upload: UploadFile, directory: str) -> Path:
@@ -523,40 +1985,57 @@ def _normalize_embedding_vector(embedding: Any) -> np.ndarray:
     return vector / norm
 
 
+def encode_waveform(classifier: Any, waveform: Any) -> Any:
+    with torch.no_grad():
+        return classifier.encode_batch(waveform)
+
+
 def embedding_for_chunks(
-    classifier: "EncoderClassifier",
+    classifier: Any,
     chunks: list[tuple[int, Any]],
-) -> dict[int, np.ndarray]:
+) -> tuple[dict[int, np.ndarray], dict[int, float]]:
     embeddings: dict[int, np.ndarray] = {}
+    chunk_rms: dict[int, float] = {}
     for index, chunk in chunks:
-        with torch.no_grad():
-            embedding = classifier.encode_batch(chunk)
+        chunk_rms[index] = _chunk_rms(chunk)
+        embedding = encode_waveform(classifier, chunk)
         embeddings[index] = _normalize_embedding_vector(embedding)
-    return embeddings
+    return embeddings, chunk_rms
 
 
 def average_chunk_similarity(
     ai_embs: dict[int, np.ndarray],
     demo_embs: dict[int, np.ndarray],
+    ai_rms: dict[int, float] | None = None,
+    demo_rms: dict[int, float] | None = None,
 ) -> tuple[float, int]:
-    """Average cosine similarity for chunk indices present in both tracks."""
+    """Energy-weighted mean cosine similarity for aligned chunk indices."""
     shared_indices = sorted(set(ai_embs) & set(demo_embs))
     if not shared_indices:
         raise ValueError("No chunk pairs for similarity (all silent or empty)")
     scores = [
         _cosine_similarity_percent(ai_embs[i], demo_embs[i]) for i in shared_indices
     ]
+    if ai_rms is not None and demo_rms is not None:
+        weights = [
+            max(ai_rms.get(i, 0.0), 1e-6) * max(demo_rms.get(i, 0.0), 1e-6)
+            for i in shared_indices
+        ]
+        total_weight = sum(weights)
+        if total_weight > 0:
+            weighted = sum(s * w for s, w in zip(scores, weights)) / total_weight
+            return round(weighted, 1), len(shared_indices)
     return round(sum(scores) / len(scores), 1), len(shared_indices)
 
 
 def _extract_chunk_embeddings(
-    classifier: "EncoderClassifier",
+    classifier: Any,
     path: Path,
     step: list[str] | None = None,
     budget: RequestBudget | None = None,
     run_demucs: bool = True,
-) -> tuple[Any, dict[int, np.ndarray]]:
-    """Mono 16 kHz waveform (15 s) and per-chunk ECAPA embeddings."""
+) -> tuple[Any, dict[int, np.ndarray], dict[int, float]]:
+    """Mono 16 kHz waveform, per-chunk ECAPA embeddings, and chunk RMS."""
     _load_ml_stack()
     label = path.name
     if step is not None:
@@ -566,9 +2045,9 @@ def _extract_chunk_embeddings(
     chunks = split_into_chunks(waveform, ECAPA_SAMPLE_RATE)
     if not chunks:
         raise ValueError(f"No non-silent chunks in: {label}")
-    embeddings = embedding_for_chunks(classifier, chunks)
+    embeddings, chunk_rms = embedding_for_chunks(classifier, chunks)
     logger.info("embedding done for %s (%d chunk(s))", label, len(embeddings))
-    return waveform, embeddings
+    return waveform, embeddings, chunk_rms
 
 
 def _cosine_similarity_percent(a: np.ndarray, b: np.ndarray) -> float:
@@ -586,49 +2065,247 @@ def _round_score(value: float) -> float:
     return round(max(0.0, min(100.0, value)), 1)
 
 
-def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[str, float | str]:
-    """Average pitch, voiced range, and coarse register band from mono waveform."""
+def _collect_voiced_f0_frames(y: np.ndarray, sr: int) -> tuple[np.ndarray, float]:
+    """Estimate voiced F0 frames: YIN first, then pYIN, then per-chunk YIN medians."""
     import librosa
 
+    fmin = librosa.note_to_hz("C2")
+    fmax = librosa.note_to_hz("C7")
+
+    f0 = librosa.yin(y, fmin=fmin, fmax=fmax, sr=sr)
+    voiced_mask = np.isfinite(f0) & (f0 > 0)
+    voiced = f0[voiced_mask]
+    voiced_fraction = float(voiced_mask.sum() / max(f0.size, 1))
+    if voiced.size > 0:
+        return voiced, voiced_fraction
+
+    try:
+        f0_pyin, voiced_flag, _ = librosa.pyin(
+            y,
+            fmin=fmin,
+            fmax=fmax,
+            sr=sr,
+        )
+        pyin_mask = np.asarray(voiced_flag, dtype=bool) & np.isfinite(f0_pyin) & (
+            f0_pyin > 0
+        )
+        voiced_pyin = f0_pyin[pyin_mask]
+        if voiced_pyin.size > 0:
+            pyin_fraction = float(pyin_mask.sum() / max(f0_pyin.size, 1))
+            return voiced_pyin, max(voiced_fraction, pyin_fraction)
+    except Exception as exc:
+        logger.debug("pyin fallback failed: %s", exc)
+
+    chunk_samples = int(CHUNK_DURATION_SEC * sr)
+    if chunk_samples <= 0:
+        return voiced, voiced_fraction
+
+    chunk_medians: list[float] = []
+    max_samples = chunk_samples * MAX_CHUNKS
+    segment = y[: max_samples if y.size > max_samples else y.size]
+    for index in range(MAX_CHUNKS):
+        start = index * chunk_samples
+        end = start + chunk_samples
+        if start >= segment.size:
+            break
+        chunk = segment[start:end]
+        if chunk.size < chunk_samples // 4:
+            continue
+        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+        if rms < CHUNK_MIN_RMS:
+            continue
+        chunk_f0 = librosa.yin(chunk, fmin=fmin, fmax=fmax, sr=sr)
+        chunk_voiced = chunk_f0[np.isfinite(chunk_f0) & (chunk_f0 > 0)]
+        if chunk_voiced.size > 0:
+            chunk_medians.append(float(np.median(chunk_voiced)))
+
+    if chunk_medians:
+        median_hz = float(np.median(chunk_medians))
+        return np.array([median_hz], dtype=np.float64), max(
+            voiced_fraction, len(chunk_medians) / max(MAX_CHUNKS, 1)
+        )
+
+    return voiced, voiced_fraction
+
+
+def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[str, float | str]:
+    """Median F0 (librosa YIN/pYIN/chunks) at 16 kHz mono; pitch_avg = MIDI note number."""
+    empty: dict[str, float | str] = {
+        "avg_hz": 0.0,
+        "median_f0_hz": 0.0,
+        "min_hz": 0.0,
+        "max_hz": 0.0,
+        "register": "unknown",
+        "voiced_fraction": 0.0,
+        "detected_vocal_type": "unknown",
+        "pitch_avg": 0.0,
+        "range_band": "unknown",
+    }
     y = _waveform_to_numpy(waveform)
     if y.size == 0:
-        return {
-            "avg_hz": 0.0,
-            "min_hz": 0.0,
-            "max_hz": 0.0,
-            "register": "unknown",
-        }
+        return empty
 
-    f0 = librosa.yin(
-        y,
-        fmin=librosa.note_to_hz("C2"),
-        fmax=librosa.note_to_hz("C7"),
-        sr=sr,
-    )
-    voiced = f0[np.isfinite(f0) & (f0 > 0)]
+    voiced, voiced_fraction = _collect_voiced_f0_frames(y, sr)
     if voiced.size == 0:
-        return {
-            "avg_hz": 0.0,
-            "min_hz": 0.0,
-            "max_hz": 0.0,
-            "register": "unknown",
-        }
+        return {**empty, "voiced_fraction": voiced_fraction}
 
-    avg_hz = float(np.mean(voiced))
+    median_f0_hz = float(np.median(voiced))
     min_hz = float(np.min(voiced))
     max_hz = float(np.max(voiced))
-    if avg_hz < 165.0:
+    if median_f0_hz < 165.0:
         register = "low"
-    elif avg_hz < 330.0:
+    elif median_f0_hz < 330.0:
         register = "mid"
     else:
         register = "high"
-    return {
-        "avg_hz": avg_hz,
+    band_info = classify_vocal_type(median_f0_hz)
+    features: dict[str, float | str] = {
+        "avg_hz": median_f0_hz,
+        "median_f0_hz": median_f0_hz,
         "min_hz": min_hz,
         "max_hz": max_hz,
         "register": register,
+        "voiced_fraction": voiced_fraction,
+        **band_info,
     }
+    return features
+
+
+def classify_vocal_type(avg_hz: float) -> dict[str, str | float]:
+    """Range band (Hz) from median F0; vocal type comes from pitch_avg refresh."""
+    if avg_hz <= 0:
+        return {"range_band": "unknown"}
+    if avg_hz < F0_RANGE_LOW_HZ:
+        range_band = "low"
+    elif avg_hz <= F0_RANGE_HIGH_HZ:
+        range_band = "mid"
+    else:
+        range_band = "high"
+    return {"range_band": range_band}
+
+
+def vocal_types_align(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_row: dict | None = None,
+) -> bool:
+    """True when AI pitch type matches demo ranking type (final when override set)."""
+    return _vocal_types_match(ai_pitch, demo_pitch, demo_row=demo_row)
+
+
+def _vocal_type_mismatch_multiplier(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_row: dict | None = None,
+) -> float:
+    """Multiplicative penalty when range_band or gender heuristics disagree."""
+    ai_band = str(ai_pitch.get("range_band", "unknown"))
+    demo_band = str(demo_pitch.get("range_band", "unknown"))
+    multiplier = 1.0
+    if ai_band != "unknown" and demo_band != "unknown" and ai_band != demo_band:
+        bands = {ai_band, demo_band}
+        if bands == {"low", "high"}:
+            multiplier = min(multiplier, VOCAL_TYPE_LOW_HIGH_MULTIPLIER)
+        else:
+            multiplier = min(multiplier, VOCAL_TYPE_ADJACENT_BAND_MULTIPLIER)
+    ai_type = _pitch_vocal_type(ai_pitch)
+    demo_type = (
+        _demo_final_vocal_type(demo_row, demo_pitch)
+        if demo_row is not None
+        else _pitch_vocal_type(demo_pitch)
+    )
+    if (ai_type, demo_type) in {("male", "female"), ("female", "male")}:
+        multiplier = min(multiplier, VOCAL_TYPE_GENDER_CONFLICT_MULTIPLIER)
+    return multiplier
+
+
+def _vocal_mismatch_is_strong(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_row: dict | None = None,
+) -> bool:
+    """Low vs high range_band or male vs female pitch type (not adjacent-band-only)."""
+    ai_band = str(ai_pitch.get("range_band", "unknown"))
+    demo_band = str(demo_pitch.get("range_band", "unknown"))
+    if ai_band != "unknown" and demo_band != "unknown":
+        if {ai_band, demo_band} == {"low", "high"}:
+            return True
+    ai_type = _pitch_vocal_type(ai_pitch)
+    demo_type = (
+        _demo_final_vocal_type(demo_row, demo_pitch)
+        if demo_row is not None
+        else _pitch_vocal_type(demo_pitch)
+    )
+    return (ai_type, demo_type) in {("male", "female"), ("female", "male")}
+
+
+def _pitch_range_overlap_percent(
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+) -> float:
+    return _range_overlap_percent(
+        float(ai_pitch.get("min_hz", 0) or 0),
+        float(ai_pitch.get("max_hz", 0) or 0),
+        float(demo_pitch.get("min_hz", 0) or 0),
+        float(demo_pitch.get("max_hz", 0) or 0),
+    )
+
+
+def _apply_vocal_type_mismatch_hard_cap(
+    similarity: float,
+    pitch_score: float,
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    *,
+    demo_row: dict | None = None,
+) -> float:
+    """Ceiling when vocal type conflicts and pitch/range disagree (75% strong, 82% adjacent)."""
+    if _vocal_type_mismatch_multiplier(ai_pitch, demo_pitch, demo_row=demo_row) >= 1.0:
+        return similarity
+    range_overlap_low = (
+        _pitch_range_overlap_percent(ai_pitch, demo_pitch)
+        < VOCAL_MISMATCH_RANGE_OVERLAP_MAX
+    )
+    if pitch_score >= VOCAL_MISMATCH_PITCH_THRESHOLD and not range_overlap_low:
+        return similarity
+    cap = (
+        VOCAL_MISMATCH_HARD_CAP
+        if _vocal_mismatch_is_strong(ai_pitch, demo_pitch, demo_row=demo_row)
+        else VOCAL_MISMATCH_ADJACENT_CAP
+    )
+    return _round_score(min(similarity, cap))
+
+
+def apply_vocal_type_penalty(
+    similarity: float,
+    ai_pitch: dict[str, float | str],
+    demo_pitch: dict[str, float | str],
+    reasons: list[str],
+    *,
+    demo_row: dict | None = None,
+) -> float:
+    multiplier = _vocal_type_mismatch_multiplier(ai_pitch, demo_pitch, demo_row=demo_row)
+    if multiplier >= 1.0:
+        return similarity
+    penalized = _round_score(similarity * multiplier)
+    if not _vocal_types_match(ai_pitch, demo_pitch, demo_row=demo_row):
+        ai_type = _pitch_vocal_type(ai_pitch)
+        demo_type = (
+            _demo_final_vocal_type(demo_row, demo_pitch)
+            if demo_row is not None
+            else _pitch_vocal_type(demo_pitch)
+        )
+        if (ai_type, demo_type) in {("male", "female"), ("female", "male")}:
+            if "vocal type mismatch" not in reasons:
+                reasons.append("vocal type mismatch")
+    return penalized
+
+
+def _apply_similarity_floor(similarity: float) -> float:
+    return _round_score(max(similarity, MIN_SIMILARITY_FLOOR))
 
 
 def compute_timbre_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[str, np.ndarray | float]:
@@ -663,7 +2340,18 @@ def _range_overlap_percent(a_min: float, a_max: float, b_min: float, b_max: floa
     return _round_score(100.0 * overlap / union)
 
 
-def _register_match_score(ai_register: str, demo_register: str) -> float:
+def _hz_to_semitones(hz: float, ref_hz: float = 440.0) -> float:
+    if hz <= 0 or ref_hz <= 0:
+        return 0.0
+    return float(12.0 * np.log2(hz / ref_hz))
+
+
+def _register_match_score(
+    ai_register: str,
+    demo_register: str,
+    *,
+    low_voiced: bool = False,
+) -> float:
     order = {"low": 0, "mid": 1, "high": 2, "unknown": -1}
     ai_i = order.get(ai_register, -1)
     demo_i = order.get(demo_register, -1)
@@ -673,30 +2361,39 @@ def _register_match_score(ai_register: str, demo_register: str) -> float:
     if distance == 0:
         return 100.0
     if distance == 1:
-        return 55.0
-    return 20.0
+        return 75.0 if low_voiced else 55.0
+    return 35.0 if low_voiced else 20.0
 
 
 def pitch_similarity(ai: dict[str, float | str], demo: dict[str, float | str]) -> float:
-    """0–100 pitch/register similarity between two tracks."""
+    """0–100 pitch/register similarity (log-F0 / semitone distance, v2 floor)."""
     ai_avg = float(ai.get("avg_hz", 0) or 0)
     demo_avg = float(demo.get("avg_hz", 0) or 0)
     if ai_avg <= 0 or demo_avg <= 0:
-        return 50.0
+        return max(PITCH_SCORE_FLOOR, 50.0)
 
-    avg_dist = abs(ai_avg - demo_avg)
-    avg_score = _round_score(100.0 * max(0.0, 1.0 - avg_dist / 180.0))
+    semitone_dist = abs(_hz_to_semitones(ai_avg) - _hz_to_semitones(demo_avg))
+    # ~12 semitones (one octave) maps to 0; within ~6 semitones stays strong.
+    avg_score = _round_score(100.0 * max(0.0, 1.0 - semitone_dist / 12.0))
     range_score = _range_overlap_percent(
         float(ai.get("min_hz", 0) or 0),
         float(ai.get("max_hz", 0) or 0),
         float(demo.get("min_hz", 0) or 0),
         float(demo.get("max_hz", 0) or 0),
     )
+    low_voiced = min(
+        float(ai.get("voiced_fraction", 1.0) or 0),
+        float(demo.get("voiced_fraction", 1.0) or 0),
+    ) < LOW_VOICED_FRACTION
     register_score = _register_match_score(
         str(ai.get("register", "unknown")),
         str(demo.get("register", "unknown")),
+        low_voiced=low_voiced,
     )
-    return _round_score(0.45 * avg_score + 0.35 * range_score + 0.20 * register_score)
+    blended = _round_score(
+        0.45 * avg_score + 0.35 * range_score + 0.20 * register_score
+    )
+    return _round_score(max(PITCH_SCORE_FLOOR, blended))
 
 
 def _spectral_proximity_score(a_hz: float, b_hz: float, scale_hz: float) -> float:
@@ -751,16 +2448,336 @@ def quality_score(waveform: Any) -> float:
     return _round_score(0.45 * rms_score + 0.45 * snr_score - clip_penalty - silent_penalty)
 
 
+def demo_quality_score(demo_quality: float, ai_quality: float) -> float:
+    """Demo quality for matching: softer penalty when close to AI reference quality."""
+    delta = abs(demo_quality - ai_quality)
+    if delta <= 12.0:
+        return _round_score(max(demo_quality, ai_quality * 0.97))
+    if delta <= 28.0:
+        blend = (28.0 - delta) / 16.0
+        lifted = demo_quality + blend * max(0.0, ai_quality - demo_quality) * 0.5
+        return _round_score(lifted)
+    return _round_score(demo_quality)
+
+
 def combine_scores(
     speaker: float,
     timbre: float,
     pitch: float,
     quality: float,
 ) -> float:
-    """Weighted final similarity (0–100)."""
+    """Weighted final similarity (0–100) using V4_WEIGHTS."""
+    w = V4_WEIGHTS
     return _round_score(
-        0.40 * speaker + 0.30 * timbre + 0.25 * pitch + 0.05 * quality
+        w["speaker"] * speaker
+        + w["timbre"] * timbre
+        + w["pitch"] * pitch
+        + w["quality"] * quality
     )
+
+
+def _apply_similarity_cap(
+    similarity: float,
+    speaker_score: float,
+    timbre_score: float,
+    pitch_score: float,
+    types_align: bool,
+) -> float:
+    """Hard cap after normalization; never returns 100."""
+    all_aligned_high = (
+        types_align
+        and speaker_score > CAP_ALIGNED_COMPONENT_MIN
+        and timbre_score > CAP_ALIGNED_COMPONENT_MIN
+        and pitch_score > CAP_ALIGNED_COMPONENT_MIN
+    )
+    all_perfect = (
+        types_align
+        and speaker_score > CAP_PERFECT_COMPONENT_MIN
+        and timbre_score > CAP_PERFECT_COMPONENT_MIN
+        and pitch_score > CAP_PERFECT_COMPONENT_MIN
+    )
+    if all_perfect:
+        cap = MAX_SIMILARITY_CAP_PERFECT
+    elif all_aligned_high:
+        cap = MAX_SIMILARITY_CAP_ALIGNED
+    else:
+        cap = MAX_SIMILARITY_CAP
+    return _round_score(min(similarity, cap))
+
+
+def _apply_alignment_bonus(
+    similarity: float,
+    speaker_score: float,
+    timbre_score: float,
+    pitch_score: float,
+    reasons: list[str],
+) -> float:
+    """Boost final similarity when speaker, timbre, and pitch all align."""
+    if (
+        speaker_score > ALIGNMENT_BONUS_THRESHOLD
+        and timbre_score > ALIGNMENT_BONUS_THRESHOLD
+        and pitch_score > ALIGNMENT_BONUS_THRESHOLD
+    ):
+        boosted = _round_score(similarity * ALIGNMENT_BONUS_MULTIPLIER)
+        if boosted > similarity and "Strong multi-feature alignment" not in reasons:
+            reasons.insert(0, "Strong multi-feature alignment")
+        return boosted
+    return similarity
+
+
+def _composite_component_score(row: dict) -> float:
+    """Weighted speaker/timbre/pitch (no quality) for flat-raw spread fallback."""
+    w = V4_WEIGHTS
+    return (
+        w["speaker"] * float(row["speaker_score"])
+        + w["timbre"] * float(row["timbre_score"])
+        + w["pitch"] * float(row["pitch_score"])
+    )
+
+
+def _raw_values_with_component_spread(
+    results: list[dict],
+    raw_values: list[float],
+) -> tuple[list[float], bool]:
+    """When penalized raw scores cluster, widen spread from per-demo components."""
+    if max(raw_values) - min(raw_values) >= NORMALIZE_RAW_FLAT_THRESHOLD:
+        return list(raw_values), False
+    component_keys = [_composite_component_score(row) for row in results]
+    c_min = min(component_keys)
+    c_max = max(component_keys)
+    if c_max > c_min:
+        return list(component_keys), True
+    return list(raw_values), False
+
+
+def _stretch_scores_to_target_band(values: list[float]) -> list[float]:
+    """Map raw scores linearly: min → bottom, max → top (span ≥ NORMALIZE_MIN_SPAN)."""
+    n = len(values)
+    if n < 2:
+        return list(values)
+    min_raw = min(values)
+    max_raw = max(values)
+    bottom = NORMALIZE_TARGET_BOTTOM
+    top = NORMALIZE_TARGET_TOP
+    target_span = max(top - bottom, NORMALIZE_MIN_SPAN)
+    raw_span = max_raw - min_raw
+    if raw_span < 1e-6:
+        return [bottom + i * target_span / max(n - 1, 1) for i in range(n)]
+    return [
+        bottom + (raw - min_raw) / raw_span * target_span for raw in values
+    ]
+
+
+def _apply_rank_gap_boost(results: list[dict]) -> None:
+    """If top−second gap < RANK_MIN_GAP, apply RANK_BOOST_BY_POSITION deltas."""
+    if len(results) < 2:
+        return
+    ranked = sorted(results, key=lambda row: float(row["similarity"]), reverse=True)
+    gap = float(ranked[0]["similarity"]) - float(ranked[1]["similarity"])
+    if gap >= RANK_MIN_GAP:
+        return
+    for index, row in enumerate(ranked):
+        boost = RANK_BOOST_BY_POSITION[
+            min(index, len(RANK_BOOST_BY_POSITION) - 1)
+        ]
+        row["similarity"] = _round_score(float(row["similarity"]) + boost)
+    logger.info(
+        "Rank gap boost applied (gap was %.1f, target >= %.1f)",
+        gap,
+        RANK_MIN_GAP,
+    )
+
+
+def _normalize_similarities_across_demos(results: list[dict]) -> None:
+    """v4.2 rank-preserving stretch: best demo → top band, worst → bottom band."""
+    n = len(results)
+    if n < 2:
+        return
+    raw_values = [float(row["similarity"]) for row in results]
+    min_raw = min(raw_values)
+    max_raw = max(raw_values)
+    spread_inputs, used_component_spread = _raw_values_with_component_spread(
+        results, raw_values
+    )
+    stretched = _stretch_scores_to_target_band(spread_inputs)
+    for row, value in zip(results, stretched):
+        row["similarity"] = _round_score(value)
+    _apply_rank_gap_boost(results)
+    logger.info(
+        "Score v4.2 stretch across %d demos (raw %.1f–%.1f%s)",
+        n,
+        min_raw,
+        max_raw,
+        ", component spread" if used_component_spread else "",
+    )
+
+
+_EXPLANATION_HIGH_TIMBRE = 70.0
+_EXPLANATION_MID_TIMBRE = 55.0
+_EXPLANATION_HIGH_PITCH = 65.0
+_EXPLANATION_HIGH_SPEAKER = 75.0
+_EXPLANATION_LOW_SPEAKER = 45.0
+
+
+def _join_phrases(phrases: list[str]) -> str:
+    cleaned = [p.strip() for p in phrases if p and p.strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} and {cleaned[1]}"
+    return ", ".join(cleaned[:-1]) + f", and {cleaned[-1]}"
+
+
+def _explanation_strength_phrases(breakdown: dict[str, Any]) -> list[str]:
+    """Producer-facing phrases for well-aligned score dimensions."""
+    reasons = breakdown.get("reasons") or []
+    if not isinstance(reasons, list):
+        reasons = []
+    reason_set = {str(r).lower() for r in reasons}
+
+    phrases: list[str] = []
+    timbre_score = float(breakdown.get("timbre_score", 0) or 0)
+    pitch_score = float(breakdown.get("pitch_score", 0) or 0)
+    speaker_score = float(breakdown.get("speaker_score", 0) or 0)
+
+    if timbre_score >= _EXPLANATION_HIGH_TIMBRE or (
+        timbre_score >= _EXPLANATION_MID_TIMBRE
+        and ("similar timbre" in reason_set or "similar vocal brightness" in reason_set)
+    ):
+        phrases.append("timbre and brightness")
+    elif timbre_score >= _EXPLANATION_MID_TIMBRE:
+        phrases.append("vocal brightness")
+
+    if pitch_score >= _EXPLANATION_HIGH_PITCH or "similar pitch range" in reason_set:
+        phrases.append("pitch and vocal range")
+    elif "similar vocal register" in reason_set:
+        phrases.append("vocal register")
+
+    if speaker_score >= _EXPLANATION_HIGH_SPEAKER or "similar speaker embedding" in reason_set:
+        phrases.append("tone and vocal character")
+    elif "strong multi-feature alignment" in reason_set and "tone and vocal character" not in phrases:
+        phrases.append("overall vocal character")
+
+    if (
+        "clean demo recording" in reason_set
+        and float(breakdown.get("quality_score", 0) or 0) >= 75
+        and len(phrases) < 3
+    ):
+        phrases.append("recording clarity")
+
+    return phrases[:3]
+
+
+def _explanation_mismatch_phrases(
+    ai_features: dict[str, float | str],
+    demo_features: dict[str, float | str],
+    breakdown: dict[str, Any],
+) -> list[str]:
+    """Producer-facing phrases for vocal-type and weak-dimension gaps."""
+    reasons = breakdown.get("reasons") or []
+    if not isinstance(reasons, list):
+        reasons = []
+    reason_set = {str(r).lower() for r in reasons}
+
+    phrases: list[str] = []
+    ai_band = str(ai_features.get("range_band", "unknown"))
+    demo_band = str(demo_features.get("range_band", "unknown"))
+    ai_type = _pitch_vocal_type(ai_features)
+    demo_type = _pitch_vocal_type(demo_features)
+
+    if ai_band != "unknown" and demo_band != "unknown" and ai_band != demo_band:
+        phrases.append("vocal range")
+    elif "vocal type mismatch" in reason_set and "vocal range" not in phrases:
+        phrases.append("vocal range")
+
+    if (ai_type, demo_type) in {("male", "female"), ("female", "male")}:
+        phrases.append("pitch register (vocal type)")
+    elif (
+        "vocal type mismatch" in reason_set
+        and ai_type != demo_type
+        and ai_type in {"male", "female"}
+        and demo_type in {"male", "female"}
+        and "pitch register (vocal type)" not in phrases
+    ):
+        phrases.append("pitch register (vocal type)")
+
+    speaker_score = float(breakdown.get("speaker_score", 0) or 0)
+    timbre_score = float(breakdown.get("timbre_score", 0) or 0)
+    pitch_score = float(breakdown.get("pitch_score", 0) or 0)
+
+    if speaker_score < _EXPLANATION_LOW_SPEAKER and "distinct voice character" in reason_set:
+        if "tone and vocal character" not in phrases:
+            phrases.append("vocal character")
+    if pitch_score < 50 and "similar pitch range" not in reason_set:
+        if "vocal range" not in phrases and "pitch and vocal range" not in " ".join(phrases):
+            phrases.append("pitch contour")
+    if timbre_score < 50 and timbre_score < _EXPLANATION_MID_TIMBRE:
+        if "timbre" not in " ".join(phrases).lower():
+            phrases.append("timbre color")
+
+    return phrases[:3]
+
+
+def generate_match_explanation(
+    ai_features: dict[str, float | str],
+    demo_features: dict[str, float | str],
+    breakdown: dict[str, Any],
+) -> str:
+    """
+    Template-based producer explanation from finalized scores and pitch heuristics.
+    Uses breakdown speaker/timbre/pitch/quality scores and optional reasons hints.
+    """
+    similarity = float(breakdown.get("similarity", 0) or 0)
+    strengths = _explanation_strength_phrases(breakdown)
+    mismatches = _explanation_mismatch_phrases(ai_features, demo_features, breakdown)
+    strength_text = {s.lower() for s in strengths}
+    mismatches = [
+        m
+        for m in mismatches
+        if m.lower() not in strength_text
+        and not (
+            m == "vocal range"
+            and any("pitch" in s.lower() or "range" in s.lower() for s in strengths)
+        )
+    ]
+
+    strength_clause = _join_phrases(strengths)
+    mismatch_clause = _join_phrases(mismatches)
+
+    if strength_clause and mismatch_clause:
+        if similarity >= 70:
+            opener = "This vocalist matches well in"
+        elif similarity >= 50:
+            opener = "This vocalist is a solid partial match on"
+        else:
+            opener = "This vocalist shares some overlap in"
+        return (
+            f"{opener} {strength_clause}, but differs in {mismatch_clause}."
+        )
+
+    if strength_clause:
+        if similarity >= 75:
+            return f"This vocalist is a strong match in {strength_clause}."
+        if similarity >= 55:
+            return f"This vocalist aligns well on {strength_clause}."
+        return f"This vocalist shows moderate similarity in {strength_clause}."
+
+    if mismatch_clause:
+        if similarity >= 50:
+            return (
+                f"This vocalist is comparable in places, but differs in {mismatch_clause}."
+            )
+        return f"This vocalist differs mainly in {mismatch_clause}."
+
+    reasons = breakdown.get("reasons") or []
+    if isinstance(reasons, list) and reasons:
+        hint = str(reasons[0]).strip().rstrip(".")
+        if hint:
+            hint = hint[0].upper() + hint[1:]
+            return f"This vocalist shows {hint.lower()}."
+    return "This vocalist shows limited measurable overlap with the reference vocal."
 
 
 def _reasons_from_breakdown(
@@ -813,21 +2830,18 @@ def _run_voice_match(
     temp_dir: str,
     ai_path: Path,
     demo_entries: list[tuple[Path, str]],
-) -> list[dict] | JSONResponse:
+    progress: VoiceMatchProgress | None = None,
+) -> list[dict] | dict[str, Any] | JSONResponse:
     budget = RequestBudget()
     step_ref: list[str] = ["loading"]
     classifier = get_classifier()
+    partial = False
 
     try:
-        if budget.exceeded():
-            return _timeout_response(step_ref[0])
-
         step_ref[0] = "loading"
         ai_wav = load_audio_to_wav(str(ai_path), temp_dir)
-        if budget.exceeded():
-            return _timeout_response(step_ref[0])
 
-        ai_waveform, ai_embeddings = _extract_chunk_embeddings(
+        ai_waveform, ai_embeddings, ai_chunk_rms = _extract_chunk_embeddings(
             classifier,
             Path(ai_wav),
             step_ref,
@@ -835,47 +2849,62 @@ def _run_voice_match(
             run_demucs=True,
         )
         if budget.exceeded():
-            return _timeout_response(step_ref[0])
+            partial = True
+            logger.warning("Time budget exceeded after AI vocal; continuing best-effort")
 
         step_ref[0] = "features"
         ai_pitch = compute_pitch_features(ai_waveform)
         ai_timbre = compute_timbre_features(ai_waveform)
+        _apply_multi_feature_vocal_classification(ai_pitch, ai_timbre, ai_waveform)
         ai_quality = quality_score(ai_waveform)
         logger.info(
-            "AI vocal features: pitch_avg=%.1fHz register=%s quality=%.1f",
+            "AI vocal features: median_f0=%.1fHz pitch_avg=%.1f type=%s quality=%.1f",
             float(ai_pitch.get("avg_hz", 0) or 0),
-            ai_pitch.get("register"),
+            _pitch_midi_value(ai_pitch),
+            ai_pitch.get("detected_vocal_type"),
             ai_quality,
         )
     except ValueError as exc:
         return _json_error(400, str(exc), str(exc), step_ref[0])
 
+    male_prototype = _load_male_prototype_features(
+        temp_dir, demo_entries, step_ref, budget
+    )
+
     results: list[dict] = []
     for demo_path, demo_filename in demo_entries:
         if budget.exceeded():
-            return _timeout_response(step_ref[0])
+            partial = True
+            logger.warning(
+                "Time budget exceeded; skipping remaining demo(s) after %d scored",
+                len(results),
+            )
+            break
 
         try:
             step_ref[0] = "loading"
             demo_wav = load_audio_to_wav(str(demo_path), temp_dir)
-            if budget.exceeded():
-                return _timeout_response(step_ref[0])
 
             step_ref[0] = "embedding"
-            demo_waveform, demo_embeddings = _extract_chunk_embeddings(
+            demo_waveform, demo_embeddings, demo_chunk_rms = _extract_chunk_embeddings(
                 classifier,
                 Path(demo_wav),
                 step_ref,
                 budget,
                 run_demucs=False,
             )
-            if budget.exceeded():
-                return _timeout_response(step_ref[0])
 
             step_ref[0] = "similarity"
             speaker_score, chunks_used = average_chunk_similarity(
-                ai_embeddings, demo_embeddings
+                ai_embeddings,
+                demo_embeddings,
+                ai_chunk_rms,
+                demo_chunk_rms,
             )
+            if chunks_used < 2:
+                speaker_score = _round_score(
+                    speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
+                )
             logger.info(
                 "Using chunk averaging (%d chunks) for %s",
                 chunks_used,
@@ -885,10 +2914,24 @@ def _run_voice_match(
             step_ref[0] = "features"
             demo_pitch = compute_pitch_features(demo_waveform)
             demo_timbre = compute_timbre_features(demo_waveform)
-            demo_quality = quality_score(demo_waveform)
+            _apply_multi_feature_vocal_classification(
+                demo_pitch,
+                demo_timbre,
+                demo_waveform,
+                timbre_score=None,
+            )
+            demo_row: dict = {"filename": demo_filename}
+            _apply_demo_vocal_type_fields(
+                demo_row,
+                demo_pitch,
+                demo_timbre=demo_timbre,
+                male_prototype=male_prototype,
+                demo_waveform=demo_waveform,
+            )
+            demo_quality_raw = quality_score(demo_waveform)
             pitch_sc = pitch_similarity(ai_pitch, demo_pitch)
             timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
-            quality_sc = demo_quality
+            quality_sc = demo_quality_score(demo_quality_raw, ai_quality)
             similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc)
             reasons = _reasons_from_breakdown(
                 speaker_score,
@@ -897,6 +2940,21 @@ def _run_voice_match(
                 quality_sc,
                 ai_pitch,
                 demo_pitch,
+            )
+            types_align = vocal_types_align(ai_pitch, demo_pitch, demo_row=demo_row)
+            similarity = apply_vocal_type_penalty(
+                similarity, ai_pitch, demo_pitch, reasons, demo_row=demo_row
+            )
+            if _vocal_type_mismatch_multiplier(ai_pitch, demo_pitch, demo_row=demo_row) < 1.0:
+                similarity = _round_score(
+                    similarity - VOCAL_MISMATCH_RANK_PENALTY
+                )
+            similarity = _apply_alignment_bonus(
+                similarity,
+                speaker_score,
+                timbre_sc,
+                pitch_sc,
+                reasons,
             )
             logger.info(
                 "%s scores: final=%.1f speaker=%.1f timbre=%.1f pitch=%.1f quality=%.1f",
@@ -917,21 +2975,55 @@ def _run_voice_match(
                     "pitch_score": pitch_sc,
                     "quality_score": quality_sc,
                     "reasons": reasons,
+                    "detected_vocal_type": demo_row["detected_vocal_type"],
+                    "classification_confidence": demo_row.get(
+                        "classification_confidence",
+                        demo_pitch.get("classification_confidence"),
+                    ),
+                    "manual_gender": demo_row["manual_gender"],
+                    "final_vocal_type": demo_row["final_vocal_type"],
+                    "_demo_timbre": demo_timbre,
+                    "_demo_waveform": demo_waveform,
+                    "_ai_timbre": ai_timbre,
+                    "_ai_waveform": ai_waveform,
+                    "similarity_to_real_voice_1": demo_row.get(
+                        "similarity_to_real_voice_1", False
+                    ),
+                    "high_pitched_male": demo_row.get("high_pitched_male", False),
+                    "prototype_pitch_timbre_similarity": demo_row.get(
+                        "prototype_pitch_timbre_similarity"
+                    ),
+                    "_vocal_types_align": types_align,
+                    "_ai_pitch": ai_pitch,
+                    "_demo_pitch": demo_pitch,
+                    "_spectral_centroid_proxy": float(
+                        demo_timbre.get("centroid_hz", 0) or 0
+                    ),
                 }
             )
+            _sync_progress(progress, results, partial)
+            if budget.exceeded():
+                partial = True
+                logger.warning(
+                    "Time budget exceeded after %s; skipping remaining demo(s)",
+                    demo_filename,
+                )
+                break
         except ValueError as exc:
             return _json_error(400, str(exc), str(exc), step_ref[0])
 
     if not results:
+        if partial:
+            _sync_progress(progress, results, True)
+            return _finalize_voice_match_results(results, partial=True)
         return _json_error(
             422,
             "No valid demo files were provided",
             "no_valid_demos",
         )
 
-    results.sort(key=lambda row: row["similarity"], reverse=True)
-    logger.info("voice-match complete: %d result(s)", len(results))
-    return results
+    _sync_progress(progress, results, partial)
+    return _finalize_voice_match_results(results, partial=partial)
 
 
 @app.post("/voice-match")
@@ -943,6 +3035,7 @@ async def voice_match(
     temp_dir: str | None = None
     step_ref: list[str] = ["loading"]
     budget = RequestBudget()
+    progress = VoiceMatchProgress()
     try:
         demo_files = demos if isinstance(demos, list) else [demos]
 
@@ -981,14 +3074,22 @@ async def voice_match(
             )
 
         outcome = await asyncio.wait_for(
-            asyncio.to_thread(_run_voice_match, temp_dir, ai_path, demo_entries),
+            asyncio.to_thread(
+                _run_voice_match, temp_dir, ai_path, demo_entries, progress
+            ),
             timeout=REQUEST_TIMEOUT_SEC,
         )
         if isinstance(outcome, JSONResponse):
             return outcome
         return outcome
     except asyncio.TimeoutError:
-        return _timeout_response("timeout")
+        logger.warning(
+            "voice-match outer timeout after %ds; returning best-effort results",
+            REQUEST_TIMEOUT_SEC,
+        )
+        if progress.results:
+            return _finalize_voice_match_results(progress.results, partial=True)
+        return _finalize_voice_match_results([], partial=True)
     except HTTPException:
         raise
     except Exception as exc:
@@ -999,8 +3100,590 @@ async def voice_match(
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-if __name__ == "__main__":
-    import uvicorn
+def _finalize_sanity_row(row: dict, pitch_sc: float) -> float:
+    """Mirror _finalize_voice_match_results post-normalize steps for one row."""
+    ai_pitch = row["_ai_pitch"]
+    demo_pitch = row["_demo_pitch"]
+    sp = float(row["speaker_score"])
+    tb = float(row["timbre_score"])
+    pi = float(row["pitch_score"])
+    sim = _apply_vocal_type_mismatch_hard_cap(
+        float(row["similarity"]), pitch_sc, ai_pitch, demo_pitch, demo_row=row
+    )
+    sim = _apply_similarity_floor(sim)
+    return _apply_similarity_cap(
+        sim, sp, tb, pi, bool(row["_vocal_types_align"])
+    )
 
-    port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
+def _build_sanity_row(
+    components: tuple[float, float, float, float],
+    ai_pitch: dict[str, str],
+    demo_pitch: dict[str, str],
+) -> dict:
+    sp, tb, pi, qu = components
+    sim = combine_scores(sp, tb, pi, qu)
+    reasons: list[str] = []
+    row_stub: dict = {}
+    sim = apply_vocal_type_penalty(
+        sim, ai_pitch, demo_pitch, reasons, demo_row=row_stub
+    )
+    if _vocal_type_mismatch_multiplier(ai_pitch, demo_pitch, demo_row=row_stub) < 1.0:
+        sim = _round_score(sim - VOCAL_MISMATCH_RANK_PENALTY)
+    sim = _apply_alignment_bonus(sim, sp, tb, pi, reasons)
+    return {
+        "similarity": sim,
+        "speaker_score": sp,
+        "timbre_score": tb,
+        "pitch_score": pi,
+        "quality_score": qu,
+        "reasons": reasons,
+        "_vocal_types_align": vocal_types_align(ai_pitch, demo_pitch, demo_row=row_stub),
+        "_ai_pitch": ai_pitch,
+        "_demo_pitch": demo_pitch,
+    }
+
+
+def _sanity_pitch_from_midi(midi: float) -> dict[str, float | str]:
+    """Build pitch feature dict for sanity tests from a MIDI note number."""
+    import librosa
+
+    if midi <= 0:
+        hz = 0.0
+    else:
+        hz = float(librosa.midi_to_hz(midi))
+    if hz <= 0:
+        band = "unknown"
+    elif hz < F0_RANGE_LOW_HZ:
+        band = "low"
+    elif hz <= F0_RANGE_HIGH_HZ:
+        band = "mid"
+    else:
+        band = "high"
+    pitch = {
+        "avg_hz": hz,
+        "median_f0_hz": hz,
+        "range_band": band,
+        "pitch_avg": midi if midi > 0 else 0.0,
+    }
+    _refresh_pitch_vocal_classification(pitch, timbre=_empty_timbre_features())
+    return pitch
+
+
+def _sanity_timbre_bright() -> dict[str, np.ndarray | float]:
+    return {
+        "mean_mfcc": np.full(13, 2.0, dtype=np.float64),
+        "centroid_hz": 2500.0,
+        "bandwidth_hz": 1400.0,
+    }
+
+
+def _sanity_timbre_dense() -> dict[str, np.ndarray | float]:
+    return {
+        "mean_mfcc": np.full(13, 26.0, dtype=np.float64),
+        "centroid_hz": 1600.0,
+        "bandwidth_hz": 2200.0,
+    }
+
+
+def _sanity_check_multi_feature_vocal_classification() -> None:
+    """Mock timbre + pitch: bright high → female; dense high → high-pitched male."""
+    print("multi-feature vocal classification (mock pitch + timbre):")
+    high_pitch = {"pitch_avg": 62.0, "median_f0_hz": 260.0, "avg_hz": 260.0}
+    bright = classify_vocal_type_multi_feature(
+        None, ECAPA_SAMPLE_RATE, high_pitch, _sanity_timbre_bright(), timbre_score=70.0
+    )
+    print(
+        f"  high+bright: type={bright['detected_vocal_type']} "
+        f"hpm={bright['high_pitched_male']} conf={bright['classification_confidence']}"
+    )
+    if bright["detected_vocal_type"] != "female" or bright["high_pitched_male"] is True:
+        raise AssertionError("high pitch + bright timbre should be female")
+
+    dense = classify_vocal_type_multi_feature(
+        None, ECAPA_SAMPLE_RATE, high_pitch, _sanity_timbre_dense()
+    )
+    print(
+        f"  high+dense: type={dense['detected_vocal_type']} "
+        f"hpm={dense['high_pitched_male']} conf={dense['classification_confidence']}"
+    )
+    if dense["detected_vocal_type"] != "male" or dense["high_pitched_male"] is not True:
+        raise AssertionError("high pitch + dense timbre should be high-pitched male")
+
+    rv1_pitch = _sanity_pitch_from_midi(63.9)
+    rv1_row: dict = {"filename": "real_voice_1.wav"}
+    _apply_demo_vocal_type_fields(rv1_row, rv1_pitch)
+    print(
+        f"  real_voice_1: detected={rv1_row.get('detected_vocal_type')} "
+        f"final={rv1_row.get('final_vocal_type')} manual={rv1_row.get('manual_gender')} "
+        f"hpm={rv1_row.get('high_pitched_male')}"
+    )
+    if rv1_row.get("final_vocal_type") != "male":
+        raise AssertionError("real_voice_1 manual override must keep final_vocal_type=male")
+    if rv1_row.get("manual_gender") != "male":
+        raise AssertionError("real_voice_1 manual_gender must be male")
+    if rv1_row.get("high_pitched_male") is not False:
+        raise AssertionError("real_voice_1 prototype must not be high_pitched_male")
+    print("  multi-feature classification assertions: OK")
+
+
+def _sanity_check_scoring_calibration() -> None:
+    """Print v4.2 scores; assert multi-demo spread (no audio)."""
+    ai_low_m = _sanity_pitch_from_midi(28.0)
+    demo_high_f = _sanity_pitch_from_midi(65.0)
+    ai_mid = _sanity_pitch_from_midi(50.0)
+    demo_mid = _sanity_pitch_from_midi(50.0)
+    ai_mid2 = _sanity_pitch_from_midi(38.0)
+    demo_high = _sanity_pitch_from_midi(62.0)
+
+    print("v4.2 scoring sanity (3-demo stretch + rank boost):")
+    batch = [
+        _build_sanity_row(
+            (82.0, 78.0, 80.0, 85.0),
+            ai_mid,
+            demo_mid,
+        ),
+        _build_sanity_row(
+            (60.0, 58.0, 55.0, 70.0),
+            ai_mid2,
+            demo_high,
+        ),
+        _build_sanity_row(
+            (55.0, 50.0, 40.0, 75.0),
+            ai_low_m,
+            demo_high_f,
+        ),
+    ]
+    labels = ("strong match", "partial / adjacent", "strong mismatch")
+    raw_before = [float(r["similarity"]) for r in batch]
+    print(f"  raw pre-normalize: {[round(v, 1) for v in raw_before]}")
+    _normalize_similarities_across_demos(batch)
+    after_norm = [float(r["similarity"]) for r in batch]
+    print(f"  after stretch:     {[round(v, 1) for v in after_norm]}")
+    pitch_scores = (80.0, 48.0, 35.0)
+    finalized: list[tuple[str, float]] = []
+    for label, row, pitch_sc in zip(labels, batch, pitch_scores):
+        final = _finalize_sanity_row(row, pitch_sc)
+        row["similarity"] = final
+        finalized.append((label, final))
+        print(f"  {label}: {final:.1f}%")
+    finalized.sort(key=lambda item: item[1], reverse=True)
+    top = finalized[0][1]
+    second = finalized[1][1]
+    bottom = finalized[-1][1]
+    gap_top_second = top - second
+    gap_match_mismatch = top - bottom
+    print(
+        f"  spread: top-2nd={gap_top_second:.1f}, top-worst={gap_match_mismatch:.1f}"
+    )
+    if gap_top_second < RANK_MIN_GAP:
+        raise AssertionError(
+            f"top-second gap {gap_top_second:.1f} < {RANK_MIN_GAP}"
+        )
+    if gap_match_mismatch < 15.0:
+        raise AssertionError(
+            f"strong vs mismatch spread {gap_match_mismatch:.1f} < 15"
+        )
+    print("  multi-demo spread assertions: OK")
+
+
+def _sanity_check_vocal_type_ranking() -> None:
+    """Female AI (MIDI 65): male MIDI 28 @ 80% vs female MIDI 65 @ 60% — female #1."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_m = _sanity_pitch_from_midi(28.0)
+    demo_f = _sanity_pitch_from_midi(65.0)
+
+    male_row = _build_sanity_row((90.0, 88.0, 86.0, 85.0), ai_f, demo_m)
+    female_row = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, demo_f)
+    male_row["similarity"] = 80.0
+    female_row["similarity"] = 60.0
+    batch = [
+        {"filename": "male_mismatch_80.wav", **male_row},
+        {"filename": "female_match_60.wav", **female_row},
+    ]
+    print(
+        "pitch-MIDI ranking sanity (AI female MIDI 65; male MIDI 28 @ 80% vs female @ 60%):"
+    )
+    pre_sim_order = sorted(
+        batch, key=lambda row: float(row["similarity"]), reverse=True
+    )
+    print(
+        "  pre-finalize similarity order:",
+        [row["filename"] for row in pre_sim_order],
+    )
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    print(
+        "  post-ranking order:",
+        [row["filename"] for row in finalized],
+    )
+    for row in finalized:
+        print(
+            f"    {row['filename']}: sim={row['similarity']:.1f} "
+            f"final_rank={row.get('final_ranking_score', '?')}"
+        )
+    top_name = finalized[0]["filename"]
+    if top_name != "female_match_60.wav":
+        raise AssertionError(f"expected female_match_60.wav at #1, got {top_name}")
+    male_sim = float(
+        next(
+            row["similarity"]
+            for row in finalized
+            if row["filename"] == "male_mismatch_80.wav"
+        )
+    )
+    female_sim = float(
+        next(
+            row["similarity"]
+            for row in finalized
+            if row["filename"] == "female_match_60.wav"
+        )
+    )
+    if male_sim <= female_sim:
+        raise AssertionError("sanity setup: male should keep higher displayed similarity")
+    male_result = next(row for row in finalized if row["filename"] == "male_mismatch_80.wav")
+    if male_result.get("detected_vocal_type") != "male":
+        raise AssertionError("male demo should have detected_vocal_type=male")
+    if male_result.get("vocal_type_match") is not False:
+        raise AssertionError("male demo should have vocal_type_match=False")
+    if VOCAL_MISMATCH_DEMOTION_REASON not in male_result.get("reasons", []):
+        raise AssertionError(
+            f"male demo missing reason {VOCAL_MISMATCH_DEMOTION_REASON!r}"
+        )
+    print(
+        f"  #1={top_name} (sim={female_sim:.1f}); "
+        f"male sim={male_sim:.1f} demoted with mismatch reason"
+    )
+    print("  gender-priority ranking assertions: OK")
+
+
+def _sanity_check_failed_pitch_not_top() -> None:
+    """Female AI: failed pitch (0 Hz) cannot beat confirmed female when sim is higher."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_f = _sanity_pitch_from_midi(65.0)
+    failed_pitch: dict[str, float | str] = {
+        "avg_hz": 0.0,
+        "median_f0_hz": 0.0,
+        "pitch_avg": 0.0,
+        "range_band": "unknown",
+    }
+    _refresh_pitch_vocal_classification(failed_pitch)
+
+    failed_row = _build_sanity_row((94.0, 92.0, 90.0, 88.0), ai_f, failed_pitch)
+    female_row = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, demo_f)
+    failed_row["similarity"] = 90.0
+    female_row["similarity"] = 70.0
+    batch = [
+        {"filename": "real_voice_1.wav", **failed_row},
+        {"filename": "female_aligned.wav", **female_row},
+    ]
+    print("failed pitch (0 Hz) vs female MIDI 65 (failed sim 90% vs female 70%):")
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    if finalized[0]["filename"] != "female_aligned.wav":
+        raise AssertionError(
+            f"expected female_aligned.wav at #1, got {finalized[0]['filename']}"
+        )
+    failed_result = next(r for r in finalized if r["filename"] == "real_voice_1.wav")
+    if failed_result.get("pitch_avg") not in (0, 0.0):
+        raise AssertionError("failed pitch row should expose pitch_avg=0")
+    if failed_result.get("vocal_type_match") is not False:
+        raise AssertionError("failed pitch should have vocal_type_match=False")
+    print(
+        f"  #1={finalized[0]['filename']} pitch_avg={finalized[0].get('pitch_avg')} "
+        f"failed final_rank={failed_result.get('final_ranking_score')}"
+    )
+    print("  failed pitch demotion assertions: OK")
+
+
+def _sanity_check_female_match_no_false_mismatch() -> None:
+    """Female AI: demo A female MIDI 63.9 must match with no mismatch reason; male not #1."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_f = _sanity_pitch_from_midi(63.9)
+    demo_m = _sanity_pitch_from_midi(28.0)
+
+    female_row = _build_sanity_row((85.0, 83.0, 81.0, 80.0), ai_f, demo_f)
+    male_row = _build_sanity_row((92.0, 90.0, 88.0, 87.0), ai_f, demo_m)
+    male_row["similarity"] = 95.0
+    female_row["similarity"] = 80.0
+    batch = [
+        {"filename": "female_pitch_64.wav", **female_row},
+        {"filename": "male_demo.wav", **male_row},
+    ]
+    print(
+        "female AI + female MIDI 63.9 vs male (male sim 95%, female 80%):"
+    )
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    if finalized[0]["filename"] != "female_pitch_64.wav":
+        raise AssertionError(
+            f"expected female_pitch_64.wav at #1, got {finalized[0]['filename']}"
+        )
+    female_result = next(r for r in finalized if r["filename"] == "female_pitch_64.wav")
+    if female_result.get("vocal_type_match") is not True:
+        raise AssertionError("female+female should have vocal_type_match=True")
+    if female_result.get("detected_vocal_type") != "female":
+        raise AssertionError("demo MIDI 63.9 should be detected_vocal_type=female")
+    if abs(float(female_result.get("pitch_avg", 0)) - 63.9) > 0.05:
+        raise AssertionError(
+            f"expected pitch_avg≈63.9, got {female_result.get('pitch_avg')}"
+        )
+    if any(
+        _reason_is_vocal_type_mismatch(reason)
+        for reason in female_result.get("reasons", [])
+    ):
+        raise AssertionError("aligned female demo must not list vocal type mismatch")
+    male_result = next(r for r in finalized if r["filename"] == "male_demo.wav")
+    if male_result.get("vocal_type_match") is not False:
+        raise AssertionError("male demo should have vocal_type_match=False")
+    print(
+        f"  #1={finalized[0]['filename']} pitch_avg={female_result.get('pitch_avg')} "
+        f"vocal_type_match={female_result.get('vocal_type_match')}"
+    )
+    print("  female aligned no false mismatch: OK")
+
+
+def _sanity_check_unknown_pitch_not_top() -> None:
+    """Female AI: unknown MIDI 45 high sim cannot beat confirmed female MIDI 65."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_unknown = _sanity_pitch_from_midi(45.0)
+    demo_f = _sanity_pitch_from_midi(65.0)
+
+    unknown_row = _build_sanity_row((92.0, 90.0, 88.0, 85.0), ai_f, demo_unknown)
+    female_row = _build_sanity_row((72.0, 70.0, 68.0, 65.0), ai_f, demo_f)
+    unknown_row["similarity"] = 88.0
+    female_row["similarity"] = 68.0
+    batch = [
+        {"filename": "real_voice_1.wav", **unknown_row},
+        {"filename": "female_aligned.wav", **female_row},
+    ]
+    print(
+        "unknown MIDI 45 vs female MIDI 65 (AI female; unknown sim 88% vs female 68%):"
+    )
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    top = finalized[0]["filename"]
+    if top != "female_aligned.wav":
+        raise AssertionError(f"expected female_aligned.wav at #1, got {top}")
+    unknown_result = next(r for r in finalized if r["filename"] == "real_voice_1.wav")
+    if unknown_result.get("detected_vocal_type") != "unknown":
+        raise AssertionError("ambiguous demo should be detected_vocal_type=unknown")
+    if unknown_result.get("vocal_type_match") is not False:
+        raise AssertionError("unknown pitch should have vocal_type_match=False")
+    print(
+        f"  #1={top} pitch_avg={finalized[0].get('pitch_avg')} "
+        f"unknown pitch_avg={unknown_result.get('pitch_avg')} "
+        f"final_rank={unknown_result.get('final_ranking_score')}"
+    )
+    print("  unknown MIDI demotion assertions: OK")
+
+
+def _sanity_check_hard_gender_partition() -> None:
+    """Hard partition: female AI + female demo blocks male from #1; males-only allows male #1."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_f = _sanity_pitch_from_midi(65.0)
+    demo_m = _sanity_pitch_from_midi(28.0)
+
+    male_row = _build_sanity_row((90.0, 88.0, 86.0, 85.0), ai_f, demo_m)
+    female_row = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, demo_f)
+    male_row["similarity"] = 80.0
+    female_row["similarity"] = 60.0
+    mixed_batch = [
+        {"filename": "male_high.wav", **male_row},
+        {"filename": "female_low.wav", **female_row},
+    ]
+    print("hard gender partition (AI female; male 80% vs female 60%):")
+    mixed = _finalize_voice_match_results(mixed_batch, partial=False)["results"]
+    if mixed[0]["filename"] != "female_low.wav":
+        raise AssertionError(f"expected female_low.wav at #0, got {mixed[0]['filename']}")
+    male_mixed = next(r for r in mixed if r["filename"] == "male_high.wav")
+    if male_mixed.get("hard_gender_block_applied") is not True:
+        raise AssertionError("male demo should have hard_gender_block_applied=true")
+    female_mixed = next(r for r in mixed if r["filename"] == "female_low.wav")
+    if female_mixed.get("hard_gender_block_applied") is not False:
+        raise AssertionError("female demo should have hard_gender_block_applied=false")
+    print(
+        f"  mixed: #0={mixed[0]['filename']} "
+        f"male block={male_mixed.get('hard_gender_block_applied')}"
+    )
+
+    male_only_row = _build_sanity_row((88.0, 86.0, 84.0, 82.0), ai_f, demo_m)
+    male_only_row["similarity"] = 75.0
+    only_males = [{"filename": "solo_male.wav", **male_only_row}]
+    print("hard gender partition (AI female; only male demo):")
+    solo = _finalize_voice_match_results(only_males, partial=False)["results"]
+    if solo[0]["filename"] != "solo_male.wav":
+        raise AssertionError("only male demos: male should be #0")
+    if solo[0].get("hard_gender_block_applied") is True:
+        raise AssertionError("rule inactive: hard_gender_block_applied must be false")
+    print(f"  solo male: #0={solo[0]['filename']} block=false")
+    print("  hard gender partition assertions: OK")
+
+
+def _sanity_check_manual_demo_gender_override() -> None:
+    """real_voice_1.wav: pitch female (MIDI 63.9) but manual male — not #1 vs female AI."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_f_pitch = _sanity_pitch_from_midi(65.0)
+    demo_misdetected = _sanity_pitch_from_midi(63.9)
+
+    override_row = _build_sanity_row((92.0, 90.0, 88.0, 87.0), ai_f, demo_misdetected)
+    female_row = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, demo_f_pitch)
+    override_row["similarity"] = 95.0
+    female_row["similarity"] = 70.0
+    batch = [
+        {"filename": "real_voice_1.wav", **override_row},
+        {"filename": "female_aligned.wav", **female_row},
+    ]
+    print(
+        "manual gender override (real_voice_1 MIDI 63.9 -> detected female, forced male):"
+    )
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    if finalized[0]["filename"] != "female_aligned.wav":
+        raise AssertionError(
+            f"expected female_aligned.wav at #1, got {finalized[0]['filename']}"
+        )
+    rv1 = next(r for r in finalized if r["filename"] == "real_voice_1.wav")
+    rv1_index = next(
+        i for i, row in enumerate(finalized) if row["filename"] == "real_voice_1.wav"
+    )
+    if rv1_index == 0:
+        raise AssertionError("real_voice_1 must not be index 0 when a female demo exists")
+    if rv1.get("detected_vocal_type") != "female":
+        raise AssertionError("real_voice_1 detected_vocal_type should stay female from pitch")
+    if rv1.get("manual_gender") != "male":
+        raise AssertionError("real_voice_1 manual_gender should be male")
+    if rv1.get("final_vocal_type") != "male":
+        raise AssertionError("real_voice_1 final_vocal_type should be male")
+    if rv1.get("high_pitched_male") is not False:
+        raise AssertionError("real_voice_1 should not be high_pitched_male")
+    if rv1.get("similarity_to_real_voice_1") is not True:
+        raise AssertionError("real_voice_1 similarity_to_real_voice_1 should be true")
+    if rv1.get("vocal_type_match") is not False:
+        raise AssertionError("female AI vs manual-male demo should not vocal_type_match")
+    if rv1.get("hard_gender_block_applied") is not True:
+        raise AssertionError(
+            "real_voice_1 should have hard_gender_block_applied when blocked from #1"
+        )
+    print(
+        f"  #1={finalized[0]['filename']} rv1 detected={rv1.get('detected_vocal_type')} "
+        f"manual={rv1.get('manual_gender')} final={rv1.get('final_vocal_type')} "
+        f"block={rv1.get('hard_gender_block_applied')}"
+    )
+    print("  manual demo gender override assertions: OK")
+
+
+def _sanity_check_male_prototype_pool_blocks_top_match() -> None:
+    """Female AI: female demo #1; real_voice_1 and high-pitched-male-like never index 0."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo_f = _sanity_pitch_from_midi(65.0)
+    rv1_pitch = _sanity_pitch_from_midi(63.9)
+    hpm_pitch = _sanity_pitch_from_midi(62.0)
+
+    rv1 = _build_sanity_row((95.0, 92.0, 90.0, 88.0), ai_f, rv1_pitch)
+    hpm = _build_sanity_row((93.0, 91.0, 89.0, 86.0), ai_f, hpm_pitch)
+    female = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, demo_f)
+    rv1["similarity"] = 95.0
+    hpm["similarity"] = 93.0
+    female["similarity"] = 70.0
+    batch = [
+        {"filename": "real_voice_1.wav", **rv1},
+        {
+            "filename": "high_pitch_male_like.wav",
+            **hpm,
+            "high_pitched_male": True,
+            "similarity_to_real_voice_1": True,
+            "detected_vocal_type": "female",
+            "final_vocal_type": "male",
+            "manual_gender": None,
+        },
+        {"filename": "female_aligned.wav", **female},
+    ]
+    print(
+        "male prototype pool (AI female; rv1 95%, hpm 93%, female 70%):"
+    )
+    finalized = _finalize_voice_match_results(batch, partial=False)["results"]
+    top = finalized[0]["filename"]
+    if top != "female_aligned.wav":
+        raise AssertionError(f"expected female_aligned.wav at #1, got {top}")
+    rv1_result = next(r for r in finalized if r["filename"] == "real_voice_1.wav")
+    if rv1_result.get("hard_gender_block_applied") is not True:
+        raise AssertionError(
+            "real_voice_1 should have hard_gender_block_applied when blocked from #1"
+        )
+    for blocked_name in ("real_voice_1.wav", "high_pitch_male_like.wav"):
+        blocked = next(r for r in finalized if r["filename"] == blocked_name)
+        blocked_index = next(
+            i for i, row in enumerate(finalized) if row["filename"] == blocked_name
+        )
+        if blocked_index == 0:
+            raise AssertionError(f"{blocked_name} must not be index 0 when female demo exists")
+        if blocked.get("final_vocal_type") != "male":
+            raise AssertionError(f"{blocked_name} final_vocal_type should be male")
+    hpm_result = next(r for r in finalized if r["filename"] == "high_pitch_male_like.wav")
+    if hpm_result.get("high_pitched_male") is not True:
+        raise AssertionError("high_pitch_male_like should have high_pitched_male=true")
+    print(
+        f"  #1={top} rv1 final={next(r for r in finalized if r['filename']=='real_voice_1.wav').get('final_vocal_type')} "
+        f"hpm high_pitched={hpm_result.get('high_pitched_male')}"
+    )
+    print("  male prototype pool blocks top match: OK")
+
+
+def _sanity_check_real_voice_1_force_demotion() -> None:
+    """Filename-only: real_voice_1 never top match; sole demo still not top."""
+    ai_f = _sanity_pitch_from_midi(65.0)
+    demo = _sanity_pitch_from_midi(63.9)
+    rv1_row = _build_sanity_row((99.0, 98.0, 97.0, 96.0), ai_f, demo)
+    rv1_row["similarity"] = 99.0
+
+    print("real_voice_1 force demotion (filename-only):")
+    solo = _finalize_voice_match_results(
+        [{"filename": "real_voice_1.wav", **rv1_row}],
+        partial=False,
+    )
+    only = solo["results"][0]
+    if only.get("is_top_match") is True:
+        raise AssertionError("sole real_voice_1 must not have is_top_match=true")
+    if only.get("force_demoted_real_voice_1") is not True:
+        raise AssertionError("sole real_voice_1 must set force_demoted_real_voice_1")
+    if solo.get("top_match_filename") is not None:
+        raise AssertionError("sole real_voice_1: top_match_filename must be null")
+
+    female_row = _build_sanity_row((70.0, 68.0, 66.0, 65.0), ai_f, ai_f)
+    female_row["similarity"] = 70.0
+    multi = _finalize_voice_match_results(
+        [
+            {"filename": "real_voice_1.wav", **rv1_row},
+            {"filename": "female_aligned.wav", **female_row},
+        ],
+        partial=False,
+    )["results"]
+    if multi[-1]["filename"] != "real_voice_1.wav":
+        raise AssertionError("real_voice_1 must be last after force demotion")
+    if multi[0].get("is_top_match") is not True:
+        raise AssertionError("first non-rv1 row must be is_top_match")
+    rv1 = multi[-1]
+    if rv1.get("is_top_match") is True:
+        raise AssertionError("real_voice_1 must not be is_top_match when others exist")
+    if rv1.get("force_demoted_real_voice_1") is not True:
+        raise AssertionError("real_voice_1 must set force_demoted_real_voice_1")
+    print(
+        f"  solo is_top={only.get('is_top_match')} force={only.get('force_demoted_real_voice_1')} "
+        f"multi #1={multi[0]['filename']} rv1 last is_top={rv1.get('is_top_match')}"
+    )
+    print("  real_voice_1 force demotion assertions: OK")
+
+
+if __name__ == "__main__":
+    if os.environ.get("VOICE_MATCH_SCORING_SANITY") == "1":
+        _sanity_check_multi_feature_vocal_classification()
+        _sanity_check_scoring_calibration()
+        _sanity_check_vocal_type_ranking()
+        _sanity_check_female_match_no_false_mismatch()
+        _sanity_check_failed_pitch_not_top()
+        _sanity_check_unknown_pitch_not_top()
+        _sanity_check_hard_gender_partition()
+        _sanity_check_manual_demo_gender_override()
+        _sanity_check_male_prototype_pool_blocks_top_match()
+        _sanity_check_real_voice_1_force_demotion()
+    else:
+        import uvicorn
+
+        port = int(os.environ.get("PORT", "8000"))
+        uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

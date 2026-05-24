@@ -13,6 +13,9 @@ Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY, Env:ALL_PROXY -ErrorAction Silently
 Remove-Item Env:http_proxy, Env:https_proxy, Env:all_proxy -ErrorAction SilentlyContinue
 Remove-Item Env:NO_PROXY, Env:no_proxy -ErrorAction SilentlyContinue
 
+$env:SB_DISABLE_K2 = "1"
+$env:SPEECHBRAIN_DISABLE_K2 = "1"
+
 if (Test-Path ".\.venv\Scripts\python.exe") {
     $Python = ".\.venv\Scripts\python.exe"
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
