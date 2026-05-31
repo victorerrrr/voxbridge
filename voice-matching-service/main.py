@@ -516,15 +516,23 @@ def _timbre_is_dense_chest(
     *,
     low_band_ratio: float | None = None,
 ) -> bool:
-    """Dense / chesty timbre: low centroid + strong low-band energy or compact MFCCs."""
+    """Dense / chesty timbre: low centroid + strong low-band energy or compact MFCCs.
+
+    Low-band energy alone is not enough (many female vocals have chest harmonics).
+    """
     centroid = float(timbre_features.get("centroid_hz", 0) or 0)
     mfcc = np.asarray(timbre_features.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    mfcc_var = _timbre_mfcc_variance(timbre_features)
     if low_band_ratio is not None and low_band_ratio >= VOCAL_CLASSIFY_LOW_BAND_RATIO_DENSE:
-        return True
+        if centroid > 0 and centroid < VOCAL_CLASSIFY_CENTROID_BRIGHT_HZ:
+            if mfcc_var >= VOCAL_CLASSIFY_MFCC_VAR_LOW_DENSITY or (
+                centroid > 0 and centroid < VOCAL_CLASSIFY_CENTROID_DENSE_HZ
+            ):
+                return True
     if centroid > 0 and centroid < VOCAL_CLASSIFY_CENTROID_DENSE_HZ:
         if mfcc.size and float(np.linalg.norm(mfcc)) > 20.0:
             return True
-        if low_band_ratio is not None and low_band_ratio >= 0.45:
+        if low_band_ratio is not None and low_band_ratio >= 0.48:
             return True
     return False
 
@@ -546,9 +554,8 @@ def classify_vocal_type_multi_feature(
       if pitch high (midi > 55 or > 60):
         if light_bright and not dense_chest -> female
         elif dense_chest -> male + high_pitched_male
-        else uncertain -> female (safe default)
+        else uncertain -> unknown (do not guess female from pitch alone)
       elif pitch low (midi < 40) -> male
-      elif pitch mid female range (midi >= 50) -> female
       else MIDI 40-60 ambiguous band: timbre disambiguation; else unknown
 
     Returns detected_vocal_type, high_pitched_male, classification_confidence.
@@ -566,9 +573,8 @@ def classify_vocal_type_multi_feature(
     light_bright = _timbre_is_light_bright(timbre_features, timbre_score=timbre_score)
     dense_chest = _timbre_is_dense_chest(timbre_features, low_band_ratio=low_band_ratio)
 
-    pitch_high = midi > VOCAL_CLASSIFY_PITCH_HIGH_MIDI or midi > VOCAL_CLASSIFY_PITCH_HIGH_STRICT_MIDI
+    pitch_high = midi > VOCAL_CLASSIFY_PITCH_HIGH_MIDI
     pitch_low = midi < VOCAL_CLASSIFY_PITCH_LOW_MIDI
-    mid_female = midi >= VOCAL_CLASSIFY_FEMALE_MID_MIN_MIDI
 
     if pitch_low:
         return {
@@ -591,19 +597,12 @@ def classify_vocal_type_multi_feature(
                 "classification_confidence": 0.78,
             }
         return {
-            "detected_vocal_type": "female",
+            "detected_vocal_type": "unknown",
             "high_pitched_male": False,
-            "classification_confidence": 0.55,
+            "classification_confidence": 0.45,
         }
 
-    if mid_female:
-        return {
-            "detected_vocal_type": "female",
-            "high_pitched_male": False,
-            "classification_confidence": 0.72,
-        }
-
-    # Ambiguous MIDI 40-60: timbre disambiguation (not pitch-only female/male cutoffs).
+    # Ambiguous MIDI 40-55: timbre disambiguation (not pitch-only female/male cutoffs).
     if light_bright and not dense_chest:
         return {
             "detected_vocal_type": "female",
@@ -780,6 +779,15 @@ def _load_male_prototype_features(
     return None
 
 
+def _classifier_confident_female(pitch: dict[str, float | str]) -> bool:
+    """Multi-feature female with enough confidence to resist prototype HPM override."""
+    return (
+        pitch.get("detected_vocal_type") == "female"
+        and float(pitch.get("classification_confidence", 0) or 0) >= 0.68
+        and pitch.get("high_pitched_male") is not True
+    )
+
+
 def _apply_demo_vocal_type_fields(
     row: dict,
     demo_pitch: dict[str, float | str],
@@ -832,7 +840,12 @@ def _apply_demo_vocal_type_fields(
             and pitch_midi >= HIGH_PITCHED_MALE_PITCH_AVG_MIN
             and timbre_close
         )
-        if timbre_close or misclassified_high_male or classifier_hpm:
+        confident_female = _classifier_confident_female(demo_pitch)
+        proto_forces_hpm = (
+            not confident_female
+            and (timbre_close or misclassified_high_male or classifier_hpm)
+        )
+        if proto_forces_hpm:
             row["high_pitched_male"] = True
             row["similarity_to_real_voice_1"] = timbre_close
             row["final_vocal_type"] = "male"
@@ -2914,11 +2927,12 @@ def _run_voice_match(
             step_ref[0] = "features"
             demo_pitch = compute_pitch_features(demo_waveform)
             demo_timbre = compute_timbre_features(demo_waveform)
+            timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             _apply_multi_feature_vocal_classification(
                 demo_pitch,
                 demo_timbre,
                 demo_waveform,
-                timbre_score=None,
+                timbre_score=timbre_sc,
             )
             demo_row: dict = {"filename": demo_filename}
             _apply_demo_vocal_type_fields(
@@ -2930,7 +2944,6 @@ def _run_voice_match(
             )
             demo_quality_raw = quality_score(demo_waveform)
             pitch_sc = pitch_similarity(ai_pitch, demo_pitch)
-            timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             quality_sc = demo_quality_score(demo_quality_raw, ai_quality)
             similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc)
             reasons = _reasons_from_breakdown(
@@ -3029,7 +3042,7 @@ def _run_voice_match(
 @app.post("/voice-match")
 async def voice_match(
     ai_vocal: Annotated[UploadFile, File()],
-    demos: Annotated[list[UploadFile], File()],
+
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3037,42 +3050,25 @@ async def voice_match(
     budget = RequestBudget()
     progress = VoiceMatchProgress()
     try:
-        demo_files = demos if isinstance(demos, list) else [demos]
+        demos_dir = Path("demos")
+        demo_files = list(demos_dir.glob("*.wav"))
 
         ai_name = Path(ai_vocal.filename or "").name or "(unnamed)"
-        demo_names = [
-            Path(d.filename or "").name or "(unnamed)"
-            for d in demo_files
-            if d.filename
-        ]
+        demo_names = [d.name for d in demo_files]
         logger.info("ai_vocal filename: %s", ai_name)
         logger.info("demos count: %d", len(demo_names))
 
         if not ai_vocal.filename:
             return _json_error(422, "Missing required field: ai_vocal", "missing_ai_vocal")
 
-        if len(demo_files) == 0 or not demo_names:
-            return _json_error(
-                422,
-                "Missing required field: demos (at least one file)",
-                "missing_demos",
-            )
-
+       
         temp_dir = tempfile.mkdtemp(prefix="voxbridge-voice-match-")
         ai_path = _save_upload(ai_vocal, temp_dir)
         demo_entries: list[tuple[Path, str]] = []
         for demo in demo_files:
-            if not demo.filename:
-                continue
-            demo_entries.append((_save_upload(demo, temp_dir), demo.filename))
+            demo_entries.append((demo, demo.name))
 
-        if not demo_entries:
-            return _json_error(
-                422,
-                "No valid demo files were provided",
-                "no_valid_demos",
-            )
-
+        
         outcome = await asyncio.wait_for(
             asyncio.to_thread(
                 _run_voice_match, temp_dir, ai_path, demo_entries, progress
@@ -3166,7 +3162,17 @@ def _sanity_pitch_from_midi(midi: float) -> dict[str, float | str]:
         "range_band": band,
         "pitch_avg": midi if midi > 0 else 0.0,
     }
-    _refresh_pitch_vocal_classification(pitch, timbre=_empty_timbre_features())
+    if midi <= 0:
+        timbre = _empty_timbre_features()
+    elif midi < VOCAL_CLASSIFY_PITCH_LOW_MIDI:
+        timbre = _sanity_timbre_dense()
+    elif midi > VOCAL_CLASSIFY_PITCH_HIGH_MIDI:
+        timbre = _sanity_timbre_bright()
+    elif midi >= VOCAL_CLASSIFY_FEMALE_MID_MIN_MIDI:
+        timbre = _sanity_timbre_bright()
+    else:
+        timbre = _empty_timbre_features()
+    _refresh_pitch_vocal_classification(pitch, timbre=timbre)
     return pitch
 
 
@@ -3225,6 +3231,40 @@ def _sanity_check_multi_feature_vocal_classification() -> None:
     if rv1_row.get("high_pitched_male") is not False:
         raise AssertionError("real_voice_1 prototype must not be high_pitched_male")
     print("  multi-feature classification assertions: OK")
+
+
+def _sanity_check_prototype_respects_confident_female() -> None:
+    """Bright high-pitch female must not become HPM via male-prototype cosine alone."""
+    high_pitch = {"pitch_avg": 63.0, "median_f0_hz": 255.0, "avg_hz": 255.0}
+    bright_timbre = _sanity_timbre_bright()
+    _apply_multi_feature_vocal_classification(
+        high_pitch, bright_timbre, None, timbre_score=72.0
+    )
+    if not _classifier_confident_female(high_pitch):
+        raise AssertionError(
+            "sanity setup: bright high pitch should classify as confident female"
+        )
+    proto = {
+        "pitch_avg": 63.9,
+        "mean_mfcc": np.full(13, 26.0, dtype=np.float64),
+        "centroid_hz": 1600.0,
+    }
+    row: dict = {"filename": "female_like.wav"}
+    _apply_demo_vocal_type_fields(
+        row,
+        high_pitch,
+        demo_timbre=bright_timbre,
+        male_prototype=proto,
+    )
+    print(
+        f"  confident female vs prototype: final={row.get('final_vocal_type')} "
+        f"hpm={row.get('high_pitched_male')} proto_sim={row.get('prototype_pitch_timbre_similarity')}"
+    )
+    if row.get("high_pitched_male") is True:
+        raise AssertionError("confident female must not be overridden to high_pitched_male")
+    if row.get("final_vocal_type") != "female":
+        raise AssertionError("confident female final_vocal_type must stay female")
+    print("  prototype vs confident female assertions: OK")
 
 
 def _sanity_check_scoring_calibration() -> None:
@@ -3673,6 +3713,7 @@ def _sanity_check_real_voice_1_force_demotion() -> None:
 if __name__ == "__main__":
     if os.environ.get("VOICE_MATCH_SCORING_SANITY") == "1":
         _sanity_check_multi_feature_vocal_classification()
+        _sanity_check_prototype_respects_confident_female()
         _sanity_check_scoring_calibration()
         _sanity_check_vocal_type_ranking()
         _sanity_check_female_match_no_false_mismatch()

@@ -2,6 +2,9 @@
 
 Записка для AI-агентов. Обновляйте при существенных изменениях архитектуры или маршрутов.
 
+**Документы для людей (handoff / переустановка ОС):**  
+[`HANDOFF_RU.md`](HANDOFF_RU.md) · [`ROADMAP_RU.md`](ROADMAP_RU.md) · [`CHANGELOG_SESSION_RU.md`](CHANGELOG_SESSION_RU.md) · [`CURSOR_BACKUP_RU.md`](CURSOR_BACKUP_RU.md)
+
 ---
 
 ## Суть проекта VoxBridge
@@ -111,7 +114,9 @@ flowchart LR
 
 | Маршрут | Роль | Примечание |
 |---------|------|------------|
-| `/home` | обе | `InternalShell` + `HomeFeed` → `HomeWorkspace` |
+| `/home` | обе | `InternalShell` + `HomeFeed` → `HomeWorkspace` (см. **режимы Home** ниже) |
+| `/workspace` | обе | Список проектов |
+| `/saved-vocalists` | producer | Сохранённые вокалисты |
 | `/search` | producer* | `InternalPageShell`, сохраняет upload context |
 | `/results` | producer* | Требует upload context, иначе redirect `/search` |
 | `/compare/[id]` | producer* | Сравнение AI vs vocalist |
@@ -149,7 +154,28 @@ Guard: `useVocalistGuard({ requireProfile?: boolean })` в `lib/use-vocalist-gua
 | `/order/create` | Stub Stripe |
 | `/order/[id]` | Stub order detail |
 | `/auth` | Placeholder Supabase auth |
-| `/admin` | Placeholder admin |
+
+### Admin (только `role=admin`, `AdminShell`)
+
+| Маршрут | Назначение |
+|---------|------------|
+| `/admin` | Overview (stats) |
+| `/admin/users` | Users management |
+| `/admin/vocalists` | Vocalists filter |
+| `/admin/producers` | Producers filter |
+| `/admin/orders` | Все заказы |
+| `/admin/workspaces` | Список workspace |
+| `/admin/messages` | Moderation chats |
+| `/admin/messages/[id]` | Chat detail |
+| `/admin/reports` | Reports |
+| `/admin/moderation` | Content queue |
+| `/admin/settings` | Settings (mock) |
+| `/admin/ai-voice-matching` | **AI Voice Lab** — POST `voice-match` API |
+
+- Login: email/username **`admin`**, password **`admin`** → redirect `/admin`.
+- Non-admin на `/admin/*` → redirect `/home`.
+- Preview: `voxbridge_admin_role_override` + top bar Producer | Vocalist | Back to Admin (`getEffectiveRole` in `lib/auth.ts`).
+- Workspace admin view: `/workspace/[orderId]?admin=1`.
 
 **Дублирование путей профиля:** канонический публичный профиль — `/vocalists/[id]`; `vocalistIdFromEmail(email)` строит id для своего профиля.
 
@@ -169,6 +195,9 @@ Guard: `useVocalistGuard({ requireProfile?: boolean })` в `lib/use-vocalist-gua
 | `voxbridge_vocalist_profiles` | `lib/vocalist-profile.ts` | Профили вокалистов по email/id |
 | `voxbridge_vocalist_reviews` | `lib/reviews.ts` | Отзывы после заказа |
 | `voxbridge_saved_vocalists` | `components/home/saved-vocalists.ts` | ID сохранённых вокалистов |
+| `voxbridge_sidebar_mode` | `components/internal-shell.tsx` | `pinned` \| `auto` |
+| `voxbridge_admin_role_override` | `lib/auth.ts` | Preview role для admin |
+| `voxbridge_admin_mode` | `lib/auth.ts` | Флаг admin session |
 
 ### Lib модули (ядро)
 
@@ -185,16 +214,44 @@ Guard: `useVocalistGuard({ requireProfile?: boolean })` в `lib/use-vocalist-gua
 | `lib/home-tracks.ts` | Треки для ленты `/home` |
 | `lib/workspace-url.ts` | `vocalistWorkspaceUrl`, `isVocalistWorkspaceSide` |
 | `lib/use-vocalist-guard.ts` | Redirect vocalist + optional onboarding |
+| `lib/admin.ts` | Mock data для admin UI |
+| `lib/admin-ai-voice-matching.ts` | `runVoiceMatching()` → API + types |
+| `lib/external-links.ts` | Spotify, SoundCloud, … |
 
 ### Hooks (`lib/hooks/`)
 
-| Hook | Store |
-|------|-------|
-| `use-upload-context.ts` | upload context |
+| Hook | Store / назначение |
+|------|---------------------|
+| `use-upload-context.ts` | upload context; `useAiVocalExists()` для matching mode |
 | `use-producer-orders.ts` | orders |
 | `use-vocalist-requests.ts` | vocalist requests |
 | `use-local-storage.ts` | произвольный ключ (raw string) |
 | `use-store-subscription.ts` | generic subscribe + snapshot helpers |
+| `use-client-auth.ts` | Auth после mount (hydration-safe) |
+| `use-mounted.ts` | `true` после mount |
+| `use-admin-guard.ts` | Guard `/admin/*` |
+| `use-home-stats.ts` | Счётчики для home hero |
+
+**Корень проекта:** `hooks/use-lab-audio-playback.ts` — одно аудио в AI Lab.
+
+### Voice matching API (вне Next.js)
+
+- Сервис: [`voice-matching-service/`](voice-matching-service/) — FastAPI, порт **8000**.
+- Endpoint: `POST /voice-match`, FormData: `ai_vocal`, `demos` (повторяемое поле).
+- Env: `NEXT_PUBLIC_VOICE_MATCH_API_URL` (default `http://localhost:8000`).
+- CORS: origin `http://localhost:3000` — фронт на другом порту требует правки `main.py`.
+
+### Режимы `/home` (`HomeWorkspace`)
+
+Ключ: `voxbridge_upload_context` (`AI_VOCAL_STORAGE_KEY`).  
+Функции: `isAiVocalActive()`, `hasAiVocalUpload()`, `getAiVocal()` в `lib/upload-context.ts`.
+
+| Режим | Условие | UI |
+|-------|---------|-----|
+| **Explore** | Нет реального AI upload (`fileName` пустой, нет `hasAiVocalFile`) | Hero, transformation demo, featured, transformations feed, strip projects. **Без match %** |
+| **Matching** | Есть upload на `/search` | Header «AI matching results», filters, list с match %, detail AI/Real, mini player A/B |
+
+Ветка с актуальным home UX: **`home-rebuild-v2`** (см. `HANDOFF_RU.md`).
 
 **Статусы заказа** (`OrderStatus`): `in_progress` → `preview_pending` → `revision_requested` → `preview_approved` → `delivery_ready` → `completed`.
 
@@ -232,18 +289,29 @@ Guard: `useVocalistGuard({ requireProfile?: boolean })` в `lib/use-vocalist-gua
 
 | Компонент | Назначение |
 |-----------|------------|
-| `HomeWorkspace` | Главный layout ленты (filters, list, detail) |
+| `HomeWorkspace` | Orchestrator: explore vs matching |
 | `HomeFeed` | Обёртка → `HomeWorkspace` |
-| `HomeAudioProvider` / `HomeMiniPlayer` | Mock playback state |
-| `HomeTrackList`, `HomeDetailPanel`, `HomeFiltersBar` | Лента и панель |
-| `HomeActiveProjectsStrip` | Активные заказы / режим view |
-| `HomeTopActionBar`, `HomeQuickMatches`, … | Вспомогательные блоки UI |
+| `HomeLandingHero`, `HomeTransformationDemo` | Explore landing |
+| `HomeFeaturedVocalists`, `HomeTransformationsFeed` | Explore sections |
+| `HomeMatchingHeader`, `HomeDiscoverySearch` | Matching mode |
+| `HomeAudioProvider` / `HomeMiniPlayer` | Playback + A/B в matching |
+| `HomeTrackList`, `HomeDetailPanel`, `HomeFiltersBar` | Matching list + panel |
+| `HomeActiveProjectsStrip` | «Continue working» (compact) |
 
 ### Workspace
 
 | Компонент | Назначение |
 |-----------|------------|
+| `OrderWorkspaceLayout` | 3 columns: info \| chat \| files |
 | `VocalistWorkspace` | UI вокалиста в `/workspace/[orderId]` |
+| `AdminWorkspaceShell` | Admin view `?admin=1` |
+
+### Admin UI
+
+| Компонент | Назначение |
+|-----------|------------|
+| `AdminShell` / `AdminPageShell` | Layout + guard |
+| `ai-voice-matching-lab.tsx` | AI Voice Lab UI |
 
 ---
 
@@ -261,6 +329,11 @@ Guard: `useVocalistGuard({ requireProfile?: boolean })` в `lib/use-vocalist-gua
 - Dashboard с табами (profile, settings, projects для producer).
 - Mock matching, ranked results, compare page.
 - Client-store hooks без `useSyncExternalStore`.
+- Admin panel + AI Voice Matching Lab (real API).
+- `/home` explore landing + conditional matching mode.
+- Hydration-safe auth (`useClientAuth`).
+- Workspace list `/workspace` + 3-column order room.
+- External links, Recording Setup, vocalist range/tags.
 
 ---
 
@@ -350,7 +423,12 @@ voxbridge/
 │   └── use-vocalist-guard.ts workspace-url.ts
 ├── public/
 ├── AGENTS.md               # Краткие инструкции (частично устарели)
-├── PROJECT_MEMO.md         # Этот файл
+├── PROJECT_MEMO.md         # Этот файл (агенты)
+├── HANDOFF_RU.md           # Handoff для человека
+├── ROADMAP_RU.md
+├── CHANGELOG_SESSION_RU.md
+├── CURSOR_BACKUP_RU.md
+├── voice-matching-service/ # Python API
 └── package.json
 ```
 

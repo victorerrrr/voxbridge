@@ -1,22 +1,241 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AdminActionButton,
   AdminPageHeader,
   AdminTable,
 } from "@/components/admin/admin-ui";
 import {
-  generateMockMatchingResults,
+  buildMatchComparisonAiContext,
+  buildMatchComparisonSections,
+  resolveMatchFeatureTagsForDisplay,
+  formatFeatureTagLabel,
+  formatMatchConfidenceLabel,
+  isRecordingFeatureTag,
+  formatDisplayVocalType,
+  formatVoiceMatchGenderDebugLine,
+  resolveMatchConfidenceLevel,
+  runVoiceMatching,
   type AiVoiceMatchResult,
+  type MatchComparisonAiContext,
+  type MatchConfidenceLevel,
   type VocalistDemoItem,
 } from "@/lib/admin-ai-voice-matching";
+import {
+  useLabAudioPlayback,
+  type LabPlaybackId,
+} from "@/hooks/use-lab-audio-playback";
 import { mockVocalists } from "@/lib/mockVocalists";
 
 type AiVocalState = {
   fileName: string;
   objectUrl: string;
+  file: File;
 } | null;
+
+const CONFIDENCE_STYLES: Record<
+  MatchConfidenceLevel,
+  { badge: string; dot: string }
+> = {
+  "very-strong": {
+    badge: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100",
+    dot: "bg-emerald-400",
+  },
+  good: {
+    badge: "border-sky-400/40 bg-sky-500/15 text-sky-100",
+    dot: "bg-sky-400",
+  },
+  partial: {
+    badge: "border-amber-400/40 bg-amber-500/15 text-amber-100",
+    dot: "bg-amber-400",
+  },
+  weak: {
+    badge: "border-zinc-500/40 bg-zinc-700/30 text-zinc-300",
+    dot: "bg-zinc-500",
+  },
+};
+
+function MatchComparisonSections({
+  row,
+  aiContext,
+}: {
+  row: AiVoiceMatchResult;
+  aiContext?: MatchComparisonAiContext;
+}) {
+  const { matched, different, recordingQualityNote } = buildMatchComparisonSections(
+    row,
+    aiContext
+  );
+  if (matched.length === 0 && different.length === 0 && !recordingQualityNote) return null;
+
+  return (
+    <div className="mt-2 max-w-md space-y-2 text-xs">
+      {matched.length > 0 && (
+        <div>
+          <p className="font-medium text-emerald-200/90">Что совпало:</p>
+          <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-zinc-400">
+            {matched.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {different.length > 0 && (
+        <div>
+          <p className="font-medium text-rose-200/90">Что отличается:</p>
+          <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-zinc-400">
+            {different.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {recordingQualityNote && (
+        <p className="text-[11px] text-zinc-500">{recordingQualityNote}</p>
+      )}
+    </div>
+  );
+}
+
+function FeatureTagChips({
+  tags,
+  variant = "default",
+}: {
+  tags: string[];
+  variant?: "default" | "amber";
+}) {
+  if (tags.length === 0) return null;
+
+  const chipClass =
+    variant === "amber"
+      ? "rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-xs text-amber-100/90"
+      : "rounded-full border border-white/10 bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-300";
+
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {tags.map((tag) => (
+        <li key={tag} className={chipClass} title={tag}>
+          {formatFeatureTagLabel(tag)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const IS_DEV = process.env.NODE_ENV === "development";
+
+function VocalTypeDisplay({ row }: { row: AiVoiceMatchResult }) {
+  return (
+    <>
+      <p className="text-[11px] text-zinc-400">{formatDisplayVocalType(row)}</p>
+      {IS_DEV && (
+        <p className="text-[10px] tabular-nums text-zinc-600">
+          {formatVoiceMatchGenderDebugLine(row)}
+        </p>
+      )}
+    </>
+  );
+}
+
+function ConfidenceBadge({ result }: { result: AiVoiceMatchResult }) {
+  const level = resolveMatchConfidenceLevel(result);
+  const styles = CONFIDENCE_STYLES[level];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles.badge}`}
+      title={
+        result.confidence != null
+          ? `Display tier from ${result.matchPercent}% match (API confidence ${result.confidence}%)`
+          : `Derived from ${result.matchPercent}% display match`
+      }
+    >
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${styles.dot}`} />
+      {formatMatchConfidenceLabel(level)}
+    </span>
+  );
+}
+
+function TopMatchCard({
+  match,
+  aiContext,
+  playButtonLabel,
+  onPlayAiVocal,
+  onPlayDemo,
+}: {
+  match: AiVoiceMatchResult;
+  aiContext?: MatchComparisonAiContext;
+  playButtonLabel: (base: string, id: LabPlaybackId) => string;
+  onPlayAiVocal: () => void;
+  onPlayDemo: () => void;
+}) {
+  const demoPlaybackId: LabPlaybackId = `demo-${match.id}`;
+  const featureTags = resolveMatchFeatureTagsForDisplay(match);
+  const recordingTags = (match.featureTags ?? []).filter(isRecordingFeatureTag);
+
+  return (
+    <article className="mb-6 rounded-2xl border border-amber-400/35 bg-gradient-to-br from-amber-500/10 via-zinc-900/70 to-zinc-950/90 p-5 shadow-[0_0_32px_rgba(251,191,36,0.08)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-2">
+          <span className="inline-flex items-center rounded-full border border-amber-300/50 bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-50">
+            Лучший вариант
+          </span>
+          <div>
+            <h3 className="text-lg font-semibold text-white">{match.vocalistName}</h3>
+            <p className="text-vox-meta">{match.filename}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full border border-emerald-400/45 bg-emerald-500/15 px-3 py-1 text-lg font-bold tabular-nums text-emerald-100">
+            {match.matchPercent}%
+          </span>
+          <ConfidenceBadge result={match} />
+          <div className="w-full">
+            <VocalTypeDisplay row={match} />
+            {IS_DEV && (
+              <p className="mt-0.5 text-[10px] tabular-nums text-zinc-600">
+                rank {match.finalRankingScore} · sim {match.similarity}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <p className="text-vox-secondary">
+          <span className="font-medium text-zinc-200">Почему лучший вариант: </span>
+        </p>
+        <FeatureTagChips tags={featureTags} variant="amber" />
+        {recordingTags.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-vox-meta">Качество записи:</p>
+            <FeatureTagChips tags={recordingTags} variant="amber" />
+          </div>
+        )}
+      </div>
+
+      <MatchComparisonSections row={match} aiContext={aiContext} />
+
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-white/5 pt-4">
+        <AdminActionButton
+          label={playButtonLabel("Play AI vocal", "ai-vocal")}
+          onClick={onPlayAiVocal}
+        />
+        <AdminActionButton
+          label={playButtonLabel("Play demo", demoPlaybackId)}
+          onClick={onPlayDemo}
+        />
+      </div>
+    </article>
+  );
+}
 
 function LabSection({
   title,
@@ -44,11 +263,13 @@ export function AiVoiceMatchingLab() {
   const [results, setResults] = useState<AiVoiceMatchResult[]>([]);
   const [isMatching, setIsMatching] = useState(false);
   const [matchError, setMatchError] = useState<string | null>(null);
+  const [processedFileCount, setProcessedFileCount] = useState<number | null>(null);
   const aiVocalInputRef = useRef<HTMLInputElement>(null);
   const demoUploadRef = useRef<HTMLInputElement>(null);
   const aiAudioRef = useRef<HTMLAudioElement>(null);
   const demoAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
-  const resultDemoRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const { togglePlayback, stopPlayback, playButtonLabel } =
+    useLabAudioPlayback();
   const aiVocalRef = useRef(aiVocal);
   const demosRef = useRef(demos);
 
@@ -82,15 +303,18 @@ export function AiVoiceMatchingLab() {
     if (!file) return;
     revokeAiVocal(aiVocal);
     const objectUrl = URL.createObjectURL(file);
-    setAiVocal({ fileName: file.name, objectUrl });
+    setAiVocal({ fileName: file.name, objectUrl, file });
     setResults([]);
     setMatchError(null);
+    setProcessedFileCount(null);
   };
 
   const clearAiVocal = () => {
+    stopPlayback();
     revokeAiVocal(aiVocal);
     setAiVocal(null);
     setResults([]);
+    setProcessedFileCount(null);
     if (aiVocalInputRef.current) aiVocalInputRef.current.value = "";
   };
 
@@ -101,10 +325,12 @@ export function AiVoiceMatchingLab() {
       name: file.name.replace(/\.[^.]+$/, "") || file.name,
       audioUrl: URL.createObjectURL(file),
       source: "upload",
+      file,
     }));
     setDemos((prev) => [...prev, ...uploaded]);
     setResults([]);
     setMatchError(null);
+    setProcessedFileCount(null);
     if (demoUploadRef.current) demoUploadRef.current.value = "";
   };
 
@@ -123,6 +349,7 @@ export function AiVoiceMatchingLab() {
     ]);
     setResults([]);
     setMatchError(null);
+    setProcessedFileCount(null);
   };
 
   const removeDemo = (id: string) => {
@@ -146,33 +373,43 @@ export function AiVoiceMatchingLab() {
       return;
     }
     setMatchError(null);
+    setProcessedFileCount(null);
     setIsMatching(true);
     setResults([]);
-    const delayMs = 2000 + Math.floor(Math.random() * 1000);
-    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-    setResults(generateMockMatchingResults(demos));
-    setIsMatching(false);
+    try {
+      const matched = await runVoiceMatching(aiVocal.file, demos);
+      setResults(matched);
+      setProcessedFileCount(matched.length);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "AI matching failed. Check backend.";
+      console.error("[voice-match] lab error:", err);
+      setMatchError(message);
+      setResults([]);
+      setProcessedFileCount(null);
+    } finally {
+      setIsMatching(false);
+    }
   };
 
   const playAiVocal = () => {
-    const audio = aiAudioRef.current;
-    if (!audio) return;
-    void audio.play().catch(() => undefined);
+    if (!aiVocal?.objectUrl) return;
+    togglePlayback("ai-vocal", aiVocal.objectUrl);
   };
 
-  const playDemo = (url: string, key: string, map: typeof demoAudioRefs) => {
-    const audio = map.current[key];
-    if (audio) {
-      void audio.play().catch(() => undefined);
-      return;
-    }
-    const el = new Audio(url);
-    map.current[key] = el;
-    void el.play().catch(() => undefined);
+  const playDemo = (url: string, demoId: string) => {
+    togglePlayback(`demo-${demoId}`, url);
   };
 
   const availableMock = mockVocalists.filter(
     (v) => !demos.some((d) => d.id === `mock-${v.id}`)
+  );
+
+  const topMatch = results.find((r) => r.isTopMatch === true) ?? null;
+  const showTopMatchSummary = topMatch != null;
+  const comparisonAiContext = useMemo(
+    () => buildMatchComparisonAiContext(results),
+    [results]
   );
 
   return (
@@ -184,7 +421,7 @@ export function AiVoiceMatchingLab() {
 
       <LabSection
         title="AI Vocal Input"
-        description="Upload a reference vocal for similarity testing (client-side only)."
+        description="Upload a reference vocal sent to the voice-matching service on Run."
       >
         <div className="flex flex-wrap items-center gap-3">
           <label className="cursor-pointer rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-500/20">
@@ -213,7 +450,7 @@ export function AiVoiceMatchingLab() {
               className="w-full max-w-md rounded-lg"
               preload="metadata"
             />
-            <p className="text-xs text-zinc-500">Preview uses a local object URL — not sent to a server.</p>
+            <p className="text-xs text-zinc-500">Preview uses a local object URL before matching.</p>
           </div>
         )}
       </LabSection>
@@ -293,77 +530,193 @@ export function AiVoiceMatchingLab() {
         <button
           type="button"
           onClick={() => void runMatching()}
-          disabled={isMatching}
+          disabled={isMatching || !aiVocal || demos.length === 0}
           className="rounded-xl border border-amber-400/45 bg-gradient-to-r from-amber-500/25 via-orange-500/20 to-rose-500/15 px-5 py-2.5 text-sm font-semibold text-amber-50 shadow-[0_0_24px_rgba(251,191,36,0.12)] transition hover:border-amber-300/60 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isMatching ? "Running AI Matching…" : "Run AI Matching"}
+          {isMatching ? "Processing audio…" : "Run AI Matching"}
         </button>
         {isMatching && (
-          <span className="text-sm text-zinc-400">Simulating model inference (2–3s)…</span>
+          <span className="text-sm text-zinc-400">Processing audio…</span>
         )}
         {matchError && <p className="text-sm text-rose-300">{matchError}</p>}
       </div>
 
-      <LabSection title="Matching Results" description="Mock scores for debugging — sorted by similarity.">
+      <LabSection
+        title="Matching Results"
+        description="Backend match order (ranked by final_ranking_score). Match % is min–max normalized final rank; raw similarity is debug-only."
+      >
         {results.length === 0 ? (
           <p className="text-sm text-zinc-500">
-            {isMatching ? "Generating results…" : "Run matching to see similarity scores."}
+            {isMatching ? "Processing audio…" : "Run matching to see match scores."}
           </p>
         ) : (
-          <AdminTable>
-            <thead className="border-b border-white/10 bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
+          <>
+            {showTopMatchSummary && topMatch && (
+              <TopMatchCard
+                match={topMatch}
+                aiContext={comparisonAiContext}
+                playButtonLabel={playButtonLabel}
+                onPlayAiVocal={playAiVocal}
+                onPlayDemo={() => playDemo(topMatch.demoAudioUrl, topMatch.id)}
+              />
+            )}
+
+            <p className="text-vox-label mb-3 text-zinc-500">All matches</p>
+            <AdminTable>
+            <thead className="border-b border-white/10 bg-zinc-900/80 text-vox-label text-zinc-500">
               <tr>
-                <th className="px-4 py-3">Vocalist</th>
-                <th className="px-4 py-3">Similarity</th>
-                <th className="px-4 py-3">Match reasons</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="px-4 py-3.5">Vocalist</th>
+                <th className="px-4 py-3.5">Match %</th>
+                <th className="px-4 py-3.5">Confidence</th>
+                <th className="px-4 py-3.5">Feature tags</th>
+                <th className="px-4 py-3.5">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {results.map((row) => (
-                <tr key={row.id} className="hover:bg-white/[0.02]">
-                  <td className="px-4 py-3 font-medium text-white">{row.vocalistName}</td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex rounded-full border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-0.5 text-sm font-semibold text-emerald-200">
-                      {row.similarity}%
+              {results.map((row, index) => {
+                const isTopMatch = row.isTopMatch === true;
+                return (
+                <tr
+                  key={row.id}
+                  className={
+                    isTopMatch
+                      ? "bg-amber-500/[0.06] ring-1 ring-inset ring-amber-400/25 hover:bg-amber-500/[0.08]"
+                      : "hover:bg-white/[0.02]"
+                  }
+                >
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-white">{row.filename}</p>
+                      {isTopMatch && (
+                        <span className="inline-flex rounded-full border border-amber-300/45 bg-amber-400/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-100">
+                          Лучший вариант
+                        </span>
+                      )}
+                    </div>
+                    {row.vocalistName !== row.filename.replace(/\.[^.]+$/, "") && (
+                      <p className="mt-0.5 text-vox-meta">{row.vocalistName}</p>
+                    )}
+                    {isTopMatch && resolveMatchFeatureTagsForDisplay(row).length > 0 && (
+                      <div className="mt-2 max-w-md space-y-1.5">
+                        <p className="text-vox-secondary text-zinc-300">
+                          Почему лучший вариант:
+                        </p>
+                        <FeatureTagChips
+                          tags={resolveMatchFeatureTagsForDisplay(row)}
+                          variant="amber"
+                        />
+                        {(row.featureTags ?? []).some(isRecordingFeatureTag) && (
+                          <div className="space-y-1">
+                            <p className="text-vox-meta">Качество записи:</p>
+                            <FeatureTagChips
+                              tags={(row.featureTags ?? []).filter(isRecordingFeatureTag)}
+                              variant="amber"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <MatchComparisonSections
+                      row={row}
+                      aiContext={comparisonAiContext}
+                    />
+                  </td>
+                  <td className="px-4 py-4">
+                    <span
+                      className={`inline-flex rounded-full border px-2.5 py-0.5 text-sm font-semibold tabular-nums ${
+                        isTopMatch
+                          ? "border-emerald-300/50 bg-emerald-500/20 text-emerald-50"
+                          : "border-emerald-400/35 bg-emerald-500/10 text-emerald-200"
+                      }`}
+                    >
+                      {row.matchPercent}%
                     </span>
+                    <p className="mt-1.5 text-[10px] tabular-nums text-zinc-500">
+                      #{row.index ?? index} · final rank {row.finalRankingScore} · sim{" "}
+                      {row.similarity}
+                    </p>
+                    <div className="mt-0.5">
+                      <VocalTypeDisplay row={row} />
+                      {IS_DEV && (
+                        <p className="text-[10px] tabular-nums text-zinc-600">
+                          isTopMatch: {row.isTopMatch === true ? "true" : "false"}
+                        </p>
+                      )}
+                    </div>
+                    {(row.breakdown.speakerScore != null ||
+                      row.breakdown.timbreScore != null ||
+                      row.breakdown.qualityScore != null) && (
+                      <p
+                        className="mt-1 text-vox-meta"
+                        title="Speaker / timbre / quality component scores"
+                      >
+                        {[
+                          row.breakdown.speakerScore != null &&
+                            `spk ${row.breakdown.speakerScore}`,
+                          row.breakdown.timbreScore != null &&
+                            `timb ${row.breakdown.timbreScore}`,
+                          row.breakdown.qualityScore != null &&
+                            `q ${row.breakdown.qualityScore}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
                   </td>
-                  <td className="px-4 py-3">
-                    <ul className="flex flex-wrap gap-1.5">
-                      {row.reasons.map((reason) => (
-                        <li
-                          key={reason}
-                          className="rounded-full border border-white/10 bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-300"
-                        >
-                          {reason}
-                        </li>
-                      ))}
-                    </ul>
+                  <td className="px-4 py-4">
+                    <ConfidenceBadge result={row} />
+                    {row.confidence != null && (
+                      <p className="mt-1.5 text-vox-meta tabular-nums">
+                        API {row.confidence}%
+                      </p>
+                    )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4">
+                    {resolveMatchFeatureTagsForDisplay(row).length === 0 ? (
+                      <span className="text-vox-muted">—</span>
+                    ) : (
+                      <FeatureTagChips
+                        tags={resolveMatchFeatureTagsForDisplay(row)}
+                        variant={isTopMatch ? "amber" : "default"}
+                      />
+                    )}
+                    {(row.featureTags ?? []).some(isRecordingFeatureTag) && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-vox-meta">Качество записи:</p>
+                        <FeatureTagChips
+                          tags={(row.featureTags ?? []).filter(isRecordingFeatureTag)}
+                          variant={isTopMatch ? "amber" : "default"}
+                        />
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
                     <div className="flex flex-wrap gap-1.5">
                       <AdminActionButton
-                        label="Play AI vocal"
+                        label={playButtonLabel("Play AI vocal", "ai-vocal")}
                         onClick={playAiVocal}
                       />
                       <AdminActionButton
-                        label="Play demo"
-                        onClick={() => playDemo(row.demoAudioUrl, row.id, resultDemoRefs)}
+                        label={playButtonLabel(
+                          "Play demo",
+                          `demo-${row.id}`
+                        )}
+                        onClick={() => playDemo(row.demoAudioUrl, row.id)}
                       />
                     </div>
-                    <audio
-                      ref={(el) => {
-                        resultDemoRefs.current[row.id] = el;
-                      }}
-                      src={row.demoAudioUrl}
-                      preload="none"
-                      className="sr-only"
-                    />
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
-          </AdminTable>
+            </AdminTable>
+            {processedFileCount != null && (
+              <p className="mt-5 text-vox-meta">
+                Matching completed — {processedFileCount} file
+                {processedFileCount === 1 ? "" : "s"} processed
+              </p>
+            )}
+          </>
         )}
       </LabSection>
     </>

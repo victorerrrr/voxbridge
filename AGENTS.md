@@ -28,11 +28,17 @@ The core idea:
 - If something is unclear, make a reasonable assumption and continue.
 
 ## Current MVP Pages
-- /
-- /search
-- /results
-- /vocalists/[id]
-- /become-vocalist
+- / (landing)
+- /signup, /login
+- /home (explore + matching modes)
+- /search, /results, /compare/[id], /vocalists/[id]
+- /workspace, /workspace/[orderId]
+- /dashboard, /saved-vocalists
+- /vocalist/* (onboarding, orders, requests, demos, tags)
+- /admin/* (admin login: admin/admin)
+- /admin/ai-voice-matching (AI lab + Python API)
+
+See **PROJECT_MEMO.md** and **HANDOFF_RU.md** for full route map.
 
 ## Design Direction
 - Dark theme
