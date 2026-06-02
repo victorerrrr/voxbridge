@@ -7,6 +7,8 @@ export const VOICE_MATCH_REQUEST_URL = `${VOICE_MATCH_API_URL.replace(/\/$/, "")
 export type VocalistDemoItem = {
   id: string;
   name: string;
+  /** Original uploaded basename (used for MANUAL_DEMO_GENDER_SUBSTRINGS on the API). */
+  originalFileName: string;
   audioUrl: string;
   source: "upload";
   file: File;
@@ -1638,6 +1640,8 @@ export type VoiceMatchApiRow = {
   index?: number;
   is_top_match?: boolean;
   filename: string;
+  /** Client upload label when multipart filenames are generic (demo_0.wav). */
+  original_filename?: string;
   similarity: number;
   final_ranking_score?: number;
   final_score?: number;
@@ -1708,6 +1712,7 @@ export function buildMatchComparisonAiContext(
 export type VoiceMatchDemoInput = {
   id: string;
   name: string;
+  originalFileName: string;
   audioUrl: string;
   file: File;
 };
@@ -1723,7 +1728,7 @@ async function resolveDemoFile(demo: VocalistDemoItem): Promise<File> {
   const ext =
     demo.audioUrl.match(/\.(wav|mp3|ogg|m4a|flac|aac)(\?|$)/i)?.[1]?.toLowerCase() ??
     "mp3";
-  return new File([blob], `${demo.name}.${ext}`, {
+  return new File([blob], demo.originalFileName || `${demo.name}.${ext}`, {
     type: blob.type || `audio/${ext}`,
   });
 }
@@ -1732,7 +1737,13 @@ function matchDemoToApiRow(
   demo: VoiceMatchDemoInput,
   row: VoiceMatchApiRow
 ): boolean {
+  const original =
+    typeof row.original_filename === "string" && row.original_filename
+      ? row.original_filename
+      : row.filename;
   return (
+    original === demo.originalFileName ||
+    row.filename === demo.originalFileName ||
     row.filename === demo.file.name ||
     row.filename.startsWith(`${demo.name}.`) ||
     row.filename.replace(/\.[^.]+$/, "") === demo.name
@@ -1845,12 +1856,12 @@ function logFormDataPayload(
   aiVocalFile: File,
   demoInputs: VoiceMatchDemoInput[]
 ): void {
-  const demoNames = demoInputs.map((d) => d.file.name);
   console.log("[voice-match] FormData:", {
     ai_vocal: aiVocalFile.name,
     ai_vocal_size: aiVocalFile.size,
-    demos_count: demoNames.length,
-    demo_names: demoNames,
+    demos_count: demoInputs.length,
+    demo_display_names: demoInputs.map((d) => d.originalFileName),
+    demo_upload_filenames: demoInputs.map((d) => d.file.name),
   });
 }
 
@@ -1870,9 +1881,12 @@ export function buildVoiceMatchFormData(
     if (!demo.file?.size) {
       throw new Error(`Demo file is missing or empty: ${demo.name}`);
     }
+    const originalFileName =
+      demo.originalFileName?.trim() || demo.file.name || demo.name;
     return {
       id: demo.id,
       name: demo.name,
+      originalFileName,
       audioUrl: demo.audioUrl,
       file: demo.file,
     };
@@ -1880,8 +1894,12 @@ export function buildVoiceMatchFormData(
 
   const formData = new FormData();
   formData.append("ai_vocal", aiVocalFile, aiVocalFile.name);
+  formData.append(
+    "demo_display_names",
+    JSON.stringify(demoInputs.map((d) => d.originalFileName))
+  );
   for (const demo of demoInputs) {
-    formData.append("demos", demo.file, demo.file.name);
+    formData.append("demos", demo.file, demo.originalFileName);
   }
 
   return { formData, demoInputs };
@@ -1999,12 +2017,18 @@ export function mapVoiceMatchResultsFromApi(
       const highPitchedMale =
         row.high_pitched_male === true ? true : undefined;
 
+      const resultFilename =
+        typeof row.original_filename === "string" && row.original_filename
+          ? row.original_filename
+          : row.filename;
+
       return {
-        id: demo?.id ?? `result-${row.filename}`,
+        id: demo?.id ?? `result-${resultFilename}`,
         index,
         isTopMatch,
-        filename: row.filename,
-        vocalistName: demo?.name ?? row.filename.replace(/\.[^.]+$/, ""),
+        filename: resultFilename,
+        vocalistName:
+          demo?.name ?? resultFilename.replace(/\.[^.]+$/, ""),
         similarity: row.similarity,
         matchPercent: apiMatchPercent ?? 0,
         finalRankingScore,

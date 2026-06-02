@@ -155,6 +155,10 @@ Constants in `main.py`: `V4_WEIGHTS`, `F0_RANGE_*`, `PITCH_MIDI_*`, `VOCAL_TYPE_
 | `detected_vocal_type` | See decision table below; optional `classification_confidence` (0–1) |
 | `high_pitched_male` | **true** when dense/chest timbre on high pitch (final ranking treats as **male**) |
 
+**AI reference (Suno/Udio):** after classification, if `high_pitched_male` is **true** and `pitch_avg` **&gt; 55**, the service reclassifies the AI ref as **female** and clears HPM (generators often mislabel bright female synth vocals as dense/high-pitched male). If the AI upload basename contains **`AI vocal`** or **`Теплый воздух`** (case-insensitive), the AI ref is forced to **female** (`detected_vocal_type`, `ai_vocal_type`, `ai_detected_vocal_type`). The same substrings apply to demo manual gender via `MANUAL_DEMO_GENDER_SUBSTRINGS`. Demo vocals keep the strict table below.
+
+**Demo upload labels:** multipart field `demo_display_names` (JSON array, same order as `demos`) supplies the original client filenames for manual-gender substring matching when the browser sends generic names like `demo_0.wav`. Each result row includes `filename` and `original_filename` (the display label).
+
 **Classification decision table** (`classify_vocal_type_multi_feature` in `main.py`):
 
 | Pitch (MIDI) | Timbre | `detected_vocal_type` | `high_pitched_male` |
@@ -166,7 +170,7 @@ Constants in `main.py`: `V4_WEIGHTS`, `F0_RANGE_*`, `PITCH_MIDI_*`, `VOCAL_TYPE_
 | **50–60** (mid female) | any | **female** | false |
 | **40–60** ambiguous | bright, not dense | **female** | false |
 | **40–60** ambiguous | dense/chest | **male** | true if MIDI ≥ **55** |
-| **40–60** ambiguous | neither cue | **unknown** | false |
+| **40–60** ambiguous | neither cue | **male** (default; typical male range) | false |
 
 Bright = high spectral centroid (≥ ~2200 Hz) or high timbre score with low MFCC variance. Dense = low centroid + strong low-band energy or compact MFCC profile. Unvoiced / zero F0 → **unknown**.
 

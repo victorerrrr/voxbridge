@@ -1,3 +1,4 @@
+import json
 import os
 
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
@@ -114,7 +115,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -171,9 +172,18 @@ VOCAL_TYPE_RANK_DISTANCE_WEIGHT = 20.0
 GENDER_MISMATCH_RANK_PENALTY = 35.0
 GENDER_MISMATCH_HARD_RANK_PENALTY = 40.0
 GENDER_PRIORITY_TIER_2_PENALTY = 50.0
-# Manual demo gender overrides (basename, case-insensitive). Pitch detection unchanged.
+# Manual demo gender overrides. Exact basename match first (case-insensitive), then substrings.
 MANUAL_DEMO_GENDER: dict[str, str] = {
     "real_voice_1.wav": "male",
+}
+MANUAL_DEMO_GENDER_SUBSTRINGS: dict[str, str] = {
+    "ai vocal": "female",
+    "теплый воздух": "female",
+    "real vocal 1": "male",
+    "real vocal 2": "female",
+    "real vocal 3": "male",
+    "real vocal 4": "female",
+    "real vocal 5": "female",
 }
 MALE_PROTOTYPE_FILENAME = "real_voice_1.wav"
 # High-pitched male: pitch+timbre cosine vs prototype (unit vector: MIDI/127 + MFCC + centroid/8k).
@@ -565,7 +575,7 @@ def classify_vocal_type_multi_feature(
         elif dense_chest -> male + high_pitched_male
         else uncertain -> unknown (do not guess female from pitch alone)
       elif pitch low (midi < 40) -> male
-      else MIDI 40-60 ambiguous band: timbre disambiguation; else unknown
+      else MIDI 40-60 ambiguous band: female only if light_bright; else male (typical male range)
 
     Returns detected_vocal_type, high_pitched_male, classification_confidence.
     """
@@ -625,7 +635,7 @@ def classify_vocal_type_multi_feature(
             "classification_confidence": 0.68,
         }
     return {
-        "detected_vocal_type": "unknown",
+        "detected_vocal_type": "male",
         "high_pitched_male": False,
         "classification_confidence": 0.4,
     }
@@ -693,8 +703,95 @@ def _refresh_pitch_vocal_classification(
     )
 
 
+def _ai_reference_generator_female_override(
+    pitch: dict[str, float | str],
+) -> bool:
+    """Suno/Udio refs: dense timbre + high MIDI often yields high_pitched_male for female voices."""
+    return (
+        pitch.get("high_pitched_male") is True
+        and _pitch_midi_value(pitch) > VOCAL_CLASSIFY_PITCH_HIGH_MIDI
+    )
+
+
+def _filename_implies_female_gender(filename: str) -> bool:
+    """True when basename contains a MANUAL_DEMO_GENDER_SUBSTRINGS key (case-insensitive)."""
+    base_lower = Path(filename).name.lower()
+    for needle in MANUAL_DEMO_GENDER_SUBSTRINGS:
+        if needle.lower() in base_lower:
+            return True
+    return False
+
+
+def _apply_ai_reference_vocal_type_adjustment(
+    pitch: dict[str, float | str],
+    *,
+    filename: str | None = None,
+) -> None:
+    """Soften AI reference classification (generators); demos keep strict rules."""
+    ref_name = filename or str(pitch.get("ai_reference_filename", "") or "")
+    if ref_name and _filename_implies_female_gender(ref_name):
+        pitch["detected_vocal_type"] = "female"
+        pitch["high_pitched_male"] = False
+        return
+    if not _ai_reference_generator_female_override(pitch):
+        return
+    pitch["detected_vocal_type"] = "female"
+    pitch["high_pitched_male"] = False
+
+
+def _refresh_ai_pitch_vocal_classification(
+    pitch: dict[str, float | str],
+    *,
+    timbre: dict[str, np.ndarray | float] | None = None,
+    waveform: Any | None = None,
+    sr: int = ECAPA_SAMPLE_RATE,
+    timbre_score: float | None = None,
+) -> None:
+    """Classify AI reference pitch + apply generator-friendly type adjustment."""
+    _refresh_pitch_vocal_classification(
+        pitch,
+        timbre=timbre,
+        waveform=waveform,
+        sr=sr,
+        timbre_score=timbre_score,
+    )
+    _apply_ai_reference_vocal_type_adjustment(
+        pitch,
+        filename=str(pitch.get("ai_reference_filename", "") or "") or None,
+    )
+
+
+def _demo_lookup_filename(row: dict) -> str:
+    """Basename used for MANUAL_DEMO_GENDER* (prefers client-supplied original name)."""
+    original = row.get("original_filename")
+    if isinstance(original, str) and original.strip():
+        return original.strip()
+    return str(row.get("filename", "") or "")
+
+
+def _parse_demo_display_names_form(raw: str | None, demo_count: int) -> list[str]:
+    """Parse JSON array from multipart field ``demo_display_names`` (client upload labels)."""
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Invalid demo_display_names JSON; ignoring")
+        return []
+    if not isinstance(parsed, list):
+        logger.warning("demo_display_names must be a JSON array; ignoring")
+        return []
+    names: list[str] = []
+    for item in parsed[:demo_count]:
+        if item is None:
+            names.append("")
+            continue
+        names.append(Path(str(item)).name.strip())
+    return names
+
+
 def _manual_demo_gender_lookup(filename: str) -> str | None:
-    """Return male|female when basename matches MANUAL_DEMO_GENDER (case-insensitive)."""
+    """Return male|female from MANUAL_DEMO_GENDER (exact basename) or SUBSTRINGS."""
     base_lower = Path(filename).name.lower()
     for key, gender in MANUAL_DEMO_GENDER.items():
         if key.lower() != base_lower:
@@ -702,7 +799,30 @@ def _manual_demo_gender_lookup(filename: str) -> str | None:
         normalized = str(gender).lower()
         if normalized in ("male", "female"):
             return normalized
+    for needle, gender in MANUAL_DEMO_GENDER_SUBSTRINGS.items():
+        if needle.lower() in base_lower:
+            normalized = str(gender).lower()
+            if normalized in ("male", "female"):
+                return normalized
     return None
+
+
+def _resolve_manual_demo_gender(row: dict) -> str | None:
+    """Manual gender from row or filename lookup (MANUAL_DEMO_GENDER*)."""
+    manual = row.get("manual_gender")
+    if manual in ("male", "female"):
+        return str(manual)
+    filename = _demo_lookup_filename(row)
+    if not filename:
+        return None
+    return _manual_demo_gender_lookup(filename)
+
+
+def _apply_manual_demo_gender_to_row(row: dict, manual: str) -> None:
+    """Apply configured manual label: final_vocal_type follows manual, not classifier."""
+    row["manual_gender"] = manual
+    row["final_vocal_type"] = manual
+    row["high_pitched_male"] = False
 
 
 def _is_male_prototype_filename(filename: str) -> bool:
@@ -805,13 +925,14 @@ def _apply_demo_vocal_type_fields(
     male_prototype: dict[str, Any] | None = None,
     demo_waveform: Any | None = None,
 ) -> None:
-    """Classify demo vocal type before scoring: multi-feature, prototype, manual override."""
+    """Classify demo vocal type before scoring: manual label, prototype, then classifier."""
     detected = _pitch_vocal_type(demo_pitch)
     row["detected_vocal_type"] = detected
     row["classification_confidence"] = float(
         demo_pitch.get("classification_confidence", 0) or 0
     )
-    filename = str(row.get("filename", ""))
+    filename = _demo_lookup_filename(row)
+    row["original_filename"] = filename
 
     if _is_male_prototype_filename(filename):
         row["similarity_to_real_voice_1"] = True
@@ -819,6 +940,18 @@ def _apply_demo_vocal_type_fields(
         manual = _manual_demo_gender_lookup(filename)
         row["manual_gender"] = manual if manual is not None else "male"
         row["final_vocal_type"] = "male"
+        return
+
+    manual = _manual_demo_gender_lookup(filename)
+    if manual is not None:
+        row.setdefault("similarity_to_real_voice_1", False)
+        _apply_manual_demo_gender_to_row(row, manual)
+        logger.info(
+            "Manual demo gender override: %s -> %s (detected=%s)",
+            filename,
+            manual,
+            detected,
+        )
         return
 
     row.setdefault("similarity_to_real_voice_1", False)
@@ -861,34 +994,33 @@ def _apply_demo_vocal_type_fields(
             row["manual_gender"] = None
             return
 
-    manual = _manual_demo_gender_lookup(filename)
-    if manual is not None:
-        row["manual_gender"] = manual
-        row["final_vocal_type"] = manual
-    else:
-        row["manual_gender"] = None
-        row["final_vocal_type"] = detected
+    row["manual_gender"] = None
+    row["final_vocal_type"] = detected
 
 
 def _apply_demo_gender_override_fields(
     row: dict,
     demo_pitch: dict[str, float | str],
 ) -> None:
-    """Refresh pitch fields without clearing prototype / high-pitched-male classification."""
+    """Refresh pitch fields; manual label wins over HPM / prototype heuristics."""
+    row["detected_vocal_type"] = _pitch_vocal_type(demo_pitch)
+    row["classification_confidence"] = float(
+        demo_pitch.get("classification_confidence", 0) or 0
+    )
+    manual = _resolve_manual_demo_gender(row)
+    if manual is not None:
+        _apply_manual_demo_gender_to_row(row, manual)
+        return
     if row.get("high_pitched_male") is True:
-        detected = _pitch_vocal_type(demo_pitch)
-        row["detected_vocal_type"] = detected
         row["final_vocal_type"] = "male"
+        row["manual_gender"] = None
         return
     if row.get("similarity_to_real_voice_1") is True or _is_male_prototype_filename(
-        str(row.get("filename", ""))
+        _demo_lookup_filename(row)
     ):
-        detected = _pitch_vocal_type(demo_pitch)
-        row["detected_vocal_type"] = detected
         row["similarity_to_real_voice_1"] = True
         row["high_pitched_male"] = False
-        manual = _manual_demo_gender_lookup(str(row.get("filename", "")))
-        row["manual_gender"] = manual if manual is not None else "male"
+        row["manual_gender"] = "male"
         row["final_vocal_type"] = "male"
         return
     _apply_demo_vocal_type_fields(row, demo_pitch)
@@ -899,17 +1031,11 @@ def _demo_final_vocal_type(
     demo_pitch: dict[str, float | str] | None = None,
 ) -> str:
     """Ranking / partition vocal type for a demo (manual override when configured)."""
-    if row.get("high_pitched_male") is True:
-        return "male"
-    manual = row.get("manual_gender")
-    if manual not in ("male", "female"):
-        filename = str(row.get("filename", ""))
-        if filename:
-            looked_up = _manual_demo_gender_lookup(filename)
-            if looked_up is not None:
-                manual = looked_up
+    manual = _resolve_manual_demo_gender(row)
     if manual in ("male", "female"):
         return manual
+    if row.get("high_pitched_male") is True:
+        return "male"
     final = row.get("final_vocal_type")
     if isinstance(final, str) and final in ("male", "female", "unknown"):
         return final
@@ -969,7 +1095,12 @@ def _pitch_vocal_type(pitch: dict[str, float | str]) -> str:
 
 
 def _ai_vocal_type(ai_pitch: dict[str, float | str]) -> str:
-    """AI vocal type for ranking (multi-feature when pitch dict was classified)."""
+    """AI vocal type for ranking (softer than demos for Suno/Udio generator artifacts)."""
+    ref_name = str(ai_pitch.get("ai_reference_filename", "") or "")
+    if ref_name and _filename_implies_female_gender(ref_name):
+        return "female"
+    if _ai_reference_generator_female_override(ai_pitch):
+        return "female"
     return _pitch_vocal_type(ai_pitch)
 
 
@@ -982,7 +1113,7 @@ def _vocal_types_match(
     """True when AI pitch type matches demo type used for ranking (final when set)."""
     if not _is_pitch_known(ai_pitch):
         return False
-    ai_type = _pitch_vocal_type(ai_pitch)
+    ai_type = _ai_vocal_type(ai_pitch)
     if demo_row is not None:
         demo_type = _demo_final_vocal_type(demo_row, demo_pitch)
     else:
@@ -1041,7 +1172,7 @@ def _compute_vocal_type_distance(
             band_distance = 2
         else:
             band_distance = 1
-    ai_type = _pitch_vocal_type(ai_pitch)
+    ai_type = _ai_vocal_type(ai_pitch)
     demo_type = demo_final_type if demo_final_type else _pitch_vocal_type(demo_pitch)
     gender_conflict = (ai_type, demo_type) in {("male", "female"), ("female", "male")}
     return band_distance + (1 if gender_conflict else 0)
@@ -1242,12 +1373,16 @@ def _attach_voice_match_debug_fields(
 ) -> None:
     """Expose ranking debug fields on each API row (temporary)."""
     ai_pitch_refreshed = dict(ai_pitch_features)
-    _refresh_pitch_vocal_classification(
+    if ai_pitch_refreshed.get("ai_reference_filename") is None and results:
+        stored = results[0].get("_ai_pitch")
+        if isinstance(stored, dict) and stored.get("ai_reference_filename"):
+            ai_pitch_refreshed["ai_reference_filename"] = stored["ai_reference_filename"]
+    _refresh_ai_pitch_vocal_classification(
         ai_pitch_refreshed,
         timbre=ai_timbre,
         waveform=ai_waveform,
     )
-    ai_type = _pitch_vocal_type(ai_pitch_refreshed)
+    ai_type = _ai_vocal_type(ai_pitch_refreshed)
 
     for row in results:
         demo_pitch = row.pop("_debug_demo_pitch", None)
@@ -1268,6 +1403,7 @@ def _attach_voice_match_debug_fields(
         row["pitch_avg"] = _pitch_midi_value(demo_dict)
         _apply_demo_gender_override_fields(row, demo_dict)
         row["ai_detected_vocal_type"] = ai_type
+        row["ai_vocal_type"] = ai_type
         row["ai_pitch_avg"] = _pitch_midi_value(ai_pitch_refreshed)
         row["vocal_type_match"] = _vocal_types_match_for_ranking(
             ai_pitch_refreshed,
@@ -1456,6 +1592,8 @@ def _build_voice_match_response(
         payload["ai_reference"] = {
             "pitch_avg": results[0].get("ai_pitch_avg"),
             "vocal_type": results[0].get("ai_detected_vocal_type"),
+            "ai_vocal_type": results[0].get("ai_vocal_type")
+            or results[0].get("ai_detected_vocal_type"),
             "timbre_score_baseline": float(results[0].get("timbre_score", 0) or 0),
         }
     return payload
@@ -1482,7 +1620,7 @@ def _apply_gender_priority_ranking(
     ai_pitch_work = dict(ai_pitch_features)
     ai_timbre_work = results[0].get("_ai_timbre") if results else None
     ai_waveform_work = results[0].get("_ai_waveform") if results else None
-    _refresh_pitch_vocal_classification(
+    _refresh_ai_pitch_vocal_classification(
         ai_pitch_work,
         timbre=ai_timbre_work if isinstance(ai_timbre_work, dict) else None,
         waveform=ai_waveform_work,
@@ -1618,7 +1756,7 @@ def _finalize_voice_match_results(
         # Tensor cannot be used in boolean context (`or` / `if tensor`).
         if ai_waveform is None and results:
             ai_waveform = results[0].get("_ai_waveform")
-        _refresh_pitch_vocal_classification(
+        _refresh_ai_pitch_vocal_classification(
             ai_pitch_dict,
             timbre=ai_timbre_dict if isinstance(ai_timbre_dict, dict) else None,
             waveform=ai_waveform,
@@ -1672,7 +1810,7 @@ def _finalize_voice_match_results(
             "quality_score": float(row["quality_score"]),
             "similarity": float(row["similarity"]),
             "reasons": list(row.get("reasons", [])),
-            "ai_vocal_type": _pitch_vocal_type(ai_pitch_dict),
+            "ai_vocal_type": _ai_vocal_type(ai_pitch_dict),
             "demo_vocal_type": _pitch_vocal_type(demo_pitch_dict),
             "ai_pitch_avg": _pitch_midi_value(ai_pitch_dict),
             "demo_pitch_avg": _pitch_midi_value(demo_pitch_dict),
@@ -1759,14 +1897,20 @@ def _save_upload(upload: UploadFile, directory: str) -> Path:
 
 
 def _save_demo_upload(
-    upload: UploadFile, directory: str, *, index: int
+    upload: UploadFile,
+    directory: str,
+    *,
+    index: int,
+    display_name: str | None = None,
 ) -> tuple[Path, str]:
-    """Save one demo upload; path is unique, result filename is the original name."""
-    display_name = Path(upload.filename or f"demo_{index}.wav").name
-    dest = Path(directory) / f"demo_{index}_{display_name}"
+    """Save one demo upload; path is unique, returned name is the client/original label."""
+    resolved_display = Path(
+        display_name or upload.filename or f"demo_{index}.wav"
+    ).name
+    dest = Path(directory) / f"demo_{index}_{resolved_display}"
     with dest.open("wb") as out:
         shutil.copyfileobj(upload.file, out)
-    return dest, display_name
+    return dest, resolved_display
 
 
 def load_audio_to_wav(path: str, work_dir: str | None = None) -> str:
@@ -2247,7 +2391,7 @@ def _vocal_type_mismatch_multiplier(
             multiplier = min(multiplier, VOCAL_TYPE_LOW_HIGH_MULTIPLIER)
         else:
             multiplier = min(multiplier, VOCAL_TYPE_ADJACENT_BAND_MULTIPLIER)
-    ai_type = _pitch_vocal_type(ai_pitch)
+    ai_type = _ai_vocal_type(ai_pitch)
     demo_type = (
         _demo_final_vocal_type(demo_row, demo_pitch)
         if demo_row is not None
@@ -2270,7 +2414,7 @@ def _vocal_mismatch_is_strong(
     if ai_band != "unknown" and demo_band != "unknown":
         if {ai_band, demo_band} == {"low", "high"}:
             return True
-    ai_type = _pitch_vocal_type(ai_pitch)
+    ai_type = _ai_vocal_type(ai_pitch)
     demo_type = (
         _demo_final_vocal_type(demo_row, demo_pitch)
         if demo_row is not None
@@ -2329,7 +2473,7 @@ def apply_vocal_type_penalty(
         return similarity
     penalized = _round_score(similarity * multiplier)
     if not _vocal_types_match(ai_pitch, demo_pitch, demo_row=demo_row):
-        ai_type = _pitch_vocal_type(ai_pitch)
+        ai_type = _ai_vocal_type(ai_pitch)
         demo_type = (
             _demo_final_vocal_type(demo_row, demo_pitch)
             if demo_row is not None
@@ -2721,7 +2865,7 @@ def _explanation_mismatch_phrases(
     phrases: list[str] = []
     ai_band = str(ai_features.get("range_band", "unknown"))
     demo_band = str(demo_features.get("range_band", "unknown"))
-    ai_type = _pitch_vocal_type(ai_features)
+    ai_type = _ai_vocal_type(ai_features)
     demo_type = _pitch_vocal_type(demo_features)
 
     if ai_band != "unknown" and demo_band != "unknown" and ai_band != demo_band:
@@ -2892,13 +3036,20 @@ def _run_voice_match(
         step_ref[0] = "features"
         ai_pitch = compute_pitch_features(ai_waveform)
         ai_timbre = compute_timbre_features(ai_waveform)
+        ai_reference_filename = ai_path.name
+        ai_pitch["ai_reference_filename"] = ai_reference_filename
         _apply_multi_feature_vocal_classification(ai_pitch, ai_timbre, ai_waveform)
+        _apply_ai_reference_vocal_type_adjustment(
+            ai_pitch, filename=ai_reference_filename
+        )
         ai_quality = quality_score(ai_waveform)
         logger.info(
-            "AI vocal features: median_f0=%.1fHz pitch_avg=%.1f type=%s quality=%.1f",
+            "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f",
+            ai_reference_filename,
             float(ai_pitch.get("avg_hz", 0) or 0),
             _pitch_midi_value(ai_pitch),
             ai_pitch.get("detected_vocal_type"),
+            _ai_vocal_type(ai_pitch),
             ai_quality,
         )
     except ValueError as exc:
@@ -2958,7 +3109,10 @@ def _run_voice_match(
                 demo_waveform,
                 timbre_score=timbre_sc,
             )
-            demo_row: dict = {"filename": demo_filename}
+            demo_row: dict = {
+                "filename": demo_filename,
+                "original_filename": demo_filename,
+            }
             _apply_demo_vocal_type_fields(
                 demo_row,
                 demo_pitch,
@@ -3005,6 +3159,7 @@ def _run_voice_match(
             results.append(
                 {
                     "filename": demo_filename,
+                    "original_filename": demo_filename,
                     "similarity": similarity,
                     "chunks_used": chunks_used,
                     "speaker_score": speaker_score,
@@ -3067,6 +3222,7 @@ def _run_voice_match(
 async def voice_match(
     ai_vocal: Annotated[UploadFile, File()],
     demos: Annotated[list[UploadFile], File()],
+    demo_display_names: Annotated[str | None, Form()] = None,
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3075,13 +3231,22 @@ async def voice_match(
     progress = VoiceMatchProgress()
     try:
         ai_name = Path(ai_vocal.filename or "").name or "(unnamed)"
+        client_demo_names = _parse_demo_display_names_form(
+            demo_display_names, len(demos)
+        )
         demo_names = [
-            Path(d.filename or f"demo_{i}.wav").name for i, d in enumerate(demos)
+            client_demo_names[i]
+            if i < len(client_demo_names) and client_demo_names[i]
+            else Path(d.filename or f"demo_{i}.wav").name
+            for i, d in enumerate(demos)
         ]
         logger.info("ai_vocal filename: %s", ai_name)
         logger.info("demos count: %d", len(demo_names))
         if demo_names:
-            logger.info("demo filenames: %s", ", ".join(demo_names))
+            logger.info("demo display names: %s", ", ".join(demo_names))
+        upload_names = [Path(d.filename or "").name for d in demos]
+        if any(upload_names):
+            logger.info("demo upload filenames: %s", ", ".join(upload_names))
 
         if not ai_vocal.filename:
             return _json_error(422, "Missing required field: ai_vocal", "missing_ai_vocal")
@@ -3096,14 +3261,22 @@ async def voice_match(
         ai_path = _save_upload(ai_vocal, temp_dir)
         demo_entries: list[tuple[Path, str]] = []
         for index, demo_upload in enumerate(demos):
-            if not demo_upload.filename:
+            client_label = (
+                client_demo_names[index]
+                if index < len(client_demo_names)
+                else ""
+            )
+            if not client_label and not (demo_upload.filename or "").strip():
                 return _json_error(
                     422,
-                    f"Demo upload at index {index} has no filename",
+                    f"Demo upload at index {index} has no filename or display name",
                     "invalid_demo_upload",
                 )
             demo_path, display_name = _save_demo_upload(
-                demo_upload, temp_dir, index=index
+                demo_upload,
+                temp_dir,
+                index=index,
+                display_name=client_label or None,
             )
             demo_entries.append((demo_path, display_name))
 
@@ -3269,6 +3442,93 @@ def _sanity_check_multi_feature_vocal_classification() -> None:
     if rv1_row.get("high_pitched_male") is not False:
         raise AssertionError("real_voice_1 prototype must not be high_pitched_male")
     print("  multi-feature classification assertions: OK")
+
+
+def _sanity_check_demo_display_names_form() -> None:
+    """Client-supplied demo_display_names override generic upload filenames."""
+    parsed = _parse_demo_display_names_form(
+        json.dumps(["Real Vocal 2.wav", "demo_1.wav"]),
+        2,
+    )
+    if parsed != ["Real Vocal 2.wav", "demo_1.wav"]:
+        raise AssertionError(f"unexpected parsed demo_display_names: {parsed}")
+    row: dict = {
+        "filename": "demo_0.wav",
+        "original_filename": "Real Vocal 2.wav",
+    }
+    if _manual_demo_gender_lookup(_demo_lookup_filename(row)) != "female":
+        raise AssertionError("original_filename should drive manual gender lookup")
+    print("  demo_display_names + original_filename lookup: OK")
+
+
+def _sanity_check_manual_substring_labels() -> None:
+    """MANUAL_DEMO_GENDER_SUBSTRINGS apply before HPM and set manual_gender on row."""
+    demo_name = "Real Vocal 2 - take 3.wav"
+    demo_pitch = _sanity_pitch_from_midi(28.0)
+    row: dict = {"filename": demo_name, "original_filename": demo_name}
+    _apply_demo_vocal_type_fields(row, demo_pitch)
+    if row.get("manual_gender") != "female":
+        raise AssertionError(f"expected manual_gender=female for {demo_name!r}")
+    if row.get("final_vocal_type") != "female":
+        raise AssertionError("manual female must set final_vocal_type=female")
+    if _demo_final_vocal_type(row, demo_pitch) != "female":
+        raise AssertionError("_demo_final_vocal_type must prefer manual over HPM")
+    row["high_pitched_male"] = True
+    _apply_demo_gender_override_fields(row, demo_pitch)
+    if row.get("manual_gender") != "female":
+        raise AssertionError("finalize refresh must keep manual_gender")
+    if row.get("final_vocal_type") != "female":
+        raise AssertionError("finalize refresh must keep final_vocal_type=female")
+    print(f"  manual substring: {demo_name!r} -> female (detected={row.get('detected_vocal_type')})")
+    print("  manual substring label assertions: OK")
+
+
+def _sanity_check_filename_female_overrides() -> None:
+    """Substring manual gender + AI filename force female."""
+    demo_name = "Suno - Теплый воздух v2.wav"
+    manual = _manual_demo_gender_lookup(demo_name)
+    if manual != "female":
+        raise AssertionError(f"expected manual female for {demo_name!r}, got {manual}")
+    ai_pitch = {"pitch_avg": 48.0, "detected_vocal_type": "male", "high_pitched_male": False}
+    ai_pitch["ai_reference_filename"] = "My AI vocal reference.mp3"
+    _apply_ai_reference_vocal_type_adjustment(ai_pitch, filename=ai_pitch["ai_reference_filename"])
+    if ai_pitch.get("detected_vocal_type") != "female":
+        raise AssertionError("AI filename override should set detected_vocal_type=female")
+    if _ai_vocal_type(ai_pitch) != "female":
+        raise AssertionError("AI filename override should yield ai_vocal_type=female")
+    print(f"  manual substring: {demo_name!r} -> {manual}")
+    print(
+        f"  AI filename override: type={ai_pitch['detected_vocal_type']} "
+        f"ai_type={_ai_vocal_type(ai_pitch)}"
+    )
+    print("  filename female override assertions: OK")
+
+
+def _sanity_check_ai_reference_hpm_female_override() -> None:
+    """AI ref: high MIDI + HPM from dense timbre → female (Suno/Udio soft rule)."""
+    high_pitch = {"pitch_avg": 62.0, "median_f0_hz": 260.0, "avg_hz": 260.0}
+    dense = classify_vocal_type_multi_feature(
+        None, ECAPA_SAMPLE_RATE, high_pitch, _sanity_timbre_dense()
+    )
+    ai_pitch = dict(high_pitch)
+    ai_pitch["detected_vocal_type"] = dense["detected_vocal_type"]
+    ai_pitch["high_pitched_male"] = dense["high_pitched_male"]
+    print(
+        f"  AI ref pre-adjust: type={ai_pitch['detected_vocal_type']} "
+        f"hpm={ai_pitch['high_pitched_male']} pitch_avg={ai_pitch['pitch_avg']}"
+    )
+    if dense["detected_vocal_type"] != "male" or dense["high_pitched_male"] is not True:
+        raise AssertionError("sanity setup: dense high pitch should be HPM male before adjust")
+    _apply_ai_reference_vocal_type_adjustment(ai_pitch)
+    if _ai_vocal_type(ai_pitch) != "female":
+        raise AssertionError("AI ref HPM + MIDI>55 should classify as female")
+    if ai_pitch.get("high_pitched_male") is not False:
+        raise AssertionError("AI ref override should clear high_pitched_male")
+    print(
+        f"  AI ref post-adjust: type={ai_pitch['detected_vocal_type']} "
+        f"hpm={ai_pitch['high_pitched_male']}"
+    )
+    print("  AI reference HPM→female override assertions: OK")
 
 
 def _sanity_check_prototype_respects_confident_female() -> None:
@@ -3540,10 +3800,12 @@ def _sanity_check_unknown_pitch_not_top() -> None:
     if top != "female_aligned.wav":
         raise AssertionError(f"expected female_aligned.wav at #1, got {top}")
     unknown_result = next(r for r in finalized if r["filename"] == "real_voice_1.wav")
-    if unknown_result.get("detected_vocal_type") != "unknown":
-        raise AssertionError("ambiguous demo should be detected_vocal_type=unknown")
+    if unknown_result.get("detected_vocal_type") != "male":
+        raise AssertionError(
+            "ambiguous MIDI 40-55 without bright timbre should be detected_vocal_type=male"
+        )
     if unknown_result.get("vocal_type_match") is not False:
-        raise AssertionError("unknown pitch should have vocal_type_match=False")
+        raise AssertionError("male-range ambiguous pitch should have vocal_type_match=False")
     print(
         f"  #1={top} pitch_avg={finalized[0].get('pitch_avg')} "
         f"unknown pitch_avg={unknown_result.get('pitch_avg')} "
@@ -3751,6 +4013,10 @@ def _sanity_check_real_voice_1_force_demotion() -> None:
 if __name__ == "__main__":
     if os.environ.get("VOICE_MATCH_SCORING_SANITY") == "1":
         _sanity_check_multi_feature_vocal_classification()
+        _sanity_check_demo_display_names_form()
+        _sanity_check_manual_substring_labels()
+        _sanity_check_filename_female_overrides()
+        _sanity_check_ai_reference_hpm_female_override()
         _sanity_check_prototype_respects_confident_female()
         _sanity_check_scoring_calibration()
         _sanity_check_vocal_type_ranking()

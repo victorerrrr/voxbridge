@@ -323,6 +323,7 @@ export function AiVoiceMatchingLab() {
     const uploaded: VocalistDemoItem[] = Array.from(files).map((file) => ({
       id: `upload-${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: file.name.replace(/\.[^.]+$/, "") || file.name,
+      originalFileName: file.name,
       audioUrl: URL.createObjectURL(file),
       source: "upload",
       file,
@@ -388,7 +389,7 @@ export function AiVoiceMatchingLab() {
       console.log("sending voice-match request", {
         url: VOICE_MATCH_REQUEST_URL,
         ai_vocal: aiVocal.file.name,
-        demos: demoInputs.map((d) => d.file.name),
+        demos: demoInputs.map((d) => d.originalFileName),
         demosCount: demoInputs.length,
       });
 

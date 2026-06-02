@@ -1,0 +1,14 @@
+grep -v "audiop-lts" requirements.txt > requirements-mac.txtfastapi
+uvicorn
+python-multipart
+torch
+torchaudio
+speechbrain
+numpy
+scipy
+demucs
+torchcodec
+pydub
+audioop-lts
+librosa
+soundfile
