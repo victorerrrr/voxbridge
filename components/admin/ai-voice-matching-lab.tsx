@@ -20,10 +20,12 @@ import {
   formatFeatureTagLabel,
   formatMatchConfidenceLabel,
   isRecordingFeatureTag,
+  buildVoiceMatchFormData,
   formatDisplayVocalType,
   formatVoiceMatchGenderDebugLine,
+  mapVoiceMatchResultsFromApi,
   resolveMatchConfidenceLevel,
-  runVoiceMatching,
+  VOICE_MATCH_REQUEST_URL,
   type AiVoiceMatchResult,
   type MatchComparisonAiContext,
   type MatchConfidenceLevel,
@@ -33,8 +35,6 @@ import {
   useLabAudioPlayback,
   type LabPlaybackId,
 } from "@/hooks/use-lab-audio-playback";
-import { mockVocalists } from "@/lib/mockVocalists";
-
 type AiVocalState = {
   fileName: string;
   objectUrl: string;
@@ -261,7 +261,7 @@ export function AiVoiceMatchingLab() {
   const [aiVocal, setAiVocal] = useState<AiVocalState>(null);
   const [demos, setDemos] = useState<VocalistDemoItem[]>([]);
   const [results, setResults] = useState<AiVoiceMatchResult[]>([]);
-  const [isMatching, setIsMatching] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [processedFileCount, setProcessedFileCount] = useState<number | null>(null);
   const aiVocalInputRef = useRef<HTMLInputElement>(null);
@@ -334,24 +334,6 @@ export function AiVoiceMatchingLab() {
     if (demoUploadRef.current) demoUploadRef.current.value = "";
   };
 
-  const addMockVocalist = (id: string) => {
-    const vocalist = mockVocalists.find((v) => v.id === id);
-    if (!vocalist) return;
-    if (demos.some((d) => d.id === `mock-${vocalist.id}`)) return;
-    setDemos((prev) => [
-      ...prev,
-      {
-        id: `mock-${vocalist.id}`,
-        name: vocalist.name,
-        audioUrl: vocalist.demoUrl,
-        source: "mock",
-      },
-    ]);
-    setResults([]);
-    setMatchError(null);
-    setProcessedFileCount(null);
-  };
-
   const removeDemo = (id: string) => {
     setDemos((prev) => {
       const target = prev.find((d) => d.id === id);
@@ -363,21 +345,98 @@ export function AiVoiceMatchingLab() {
     setResults((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const runMatching = async () => {
+  const handleRunMatching = useCallback(async () => {
+    console.log("Run AI Matching clicked");
+
     if (!aiVocal) {
-      setMatchError("Upload an AI vocal reference before running matching.");
+      const message = "Загрузите AI vocal (референс) перед запуском matching.";
+      setMatchError(message);
+      console.warn("[voice-match] blocked:", message);
       return;
     }
     if (demos.length === 0) {
-      setMatchError("Add at least one vocalist demo (upload or mock list).");
+      const message = "Загрузите хотя бы один demo-файл вокалиста.";
+      setMatchError(message);
+      console.warn("[voice-match] blocked:", message);
       return;
     }
+    const missingFile = demos.find((d) => !d.file?.size);
+    if (missingFile) {
+      const message = `Файл demo пустой или не загружен: ${missingFile.name}`;
+      setMatchError(message);
+      console.warn("[voice-match] blocked:", message);
+      return;
+    }
+    if (!aiVocal.file.size) {
+      const message = "AI vocal файл пустой.";
+      setMatchError(message);
+      console.warn("[voice-match] blocked:", message);
+      return;
+    }
+
     setMatchError(null);
     setProcessedFileCount(null);
-    setIsMatching(true);
+    setIsProcessing(true);
     setResults([]);
+
     try {
-      const matched = await runVoiceMatching(aiVocal.file, demos);
+      const { formData, demoInputs } = buildVoiceMatchFormData(
+        aiVocal.file,
+        demos
+      );
+
+      console.log("sending voice-match request", {
+        url: VOICE_MATCH_REQUEST_URL,
+        ai_vocal: aiVocal.file.name,
+        demos: demoInputs.map((d) => d.file.name),
+        demosCount: demoInputs.length,
+      });
+
+      const controller = new AbortController();
+      const timeoutMs = 120_000;
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+      let response: Response;
+      try {
+        response = await fetch(VOICE_MATCH_REQUEST_URL, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+      } catch (fetchErr) {
+        const isAbort =
+          fetchErr instanceof Error && fetchErr.name === "AbortError";
+        const detail =
+          fetchErr instanceof Error ? fetchErr.message : "Network request failed";
+        throw new Error(
+          isAbort
+            ? `Запрос к voice-match превысил ${timeoutMs / 1000} с (${VOICE_MATCH_REQUEST_URL}).`
+            : `Не удалось отправить запрос: ${detail}. URL: ${VOICE_MATCH_REQUEST_URL}`
+        );
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      const responseText = await response.text();
+      console.log("[voice-match] response status:", response.status);
+      try {
+        const rawJson = JSON.parse(responseText) as
+          | { results?: unknown[] }
+          | unknown[];
+        const rawResults = Array.isArray(rawJson)
+          ? rawJson
+          : rawJson?.results;
+        console.log("[voice-match] API results (full response):", rawResults ?? rawJson);
+      } catch {
+        console.log("[voice-match] API response (non-JSON preview):", responseText.slice(0, 500));
+      }
+
+      const matched = mapVoiceMatchResultsFromApi(
+        responseText,
+        response.status,
+        demoInputs
+      );
+      console.log("[voice-match] success:", matched.length, "result(s)");
       setResults(matched);
       setProcessedFileCount(matched.length);
     } catch (err) {
@@ -388,9 +447,9 @@ export function AiVoiceMatchingLab() {
       setResults([]);
       setProcessedFileCount(null);
     } finally {
-      setIsMatching(false);
+      setIsProcessing(false);
     }
-  };
+  }, [aiVocal, demos]);
 
   const playAiVocal = () => {
     if (!aiVocal?.objectUrl) return;
@@ -400,10 +459,6 @@ export function AiVoiceMatchingLab() {
   const playDemo = (url: string, demoId: string) => {
     togglePlayback(`demo-${demoId}`, url);
   };
-
-  const availableMock = mockVocalists.filter(
-    (v) => !demos.some((d) => d.id === `mock-${v.id}`)
-  );
 
   const topMatch = results.find((r) => r.isTopMatch === true) ?? null;
   const showTopMatchSummary = topMatch != null;
@@ -457,7 +512,7 @@ export function AiVoiceMatchingLab() {
 
       <LabSection
         title="Vocalist Demos"
-        description="Upload multiple files or pick from the mock vocalist catalog."
+        description="Upload one or more demo files — only these files are sent to matching (not a server folder)."
       >
         <div className="flex flex-wrap gap-3">
           <label className="cursor-pointer rounded-lg border border-purple-400/35 bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-100 transition hover:bg-purple-500/20">
@@ -473,24 +528,6 @@ export function AiVoiceMatchingLab() {
           </label>
         </div>
 
-        {availableMock.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Mock catalog</p>
-            <div className="flex flex-wrap gap-2">
-              {availableMock.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => addMockVocalist(v.id)}
-                  className="rounded-full border border-white/15 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-amber-400/40 hover:text-white"
-                >
-                  + {v.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {demos.length === 0 ? (
           <p className="mt-4 text-sm text-zinc-500">No vocalist demos yet.</p>
         ) : (
@@ -502,9 +539,7 @@ export function AiVoiceMatchingLab() {
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-white">{demo.name}</p>
-                  <p className="text-xs text-zinc-500">
-                    {demo.source === "mock" ? "Mock vocalist" : "Uploaded file"}
-                  </p>
+                  <p className="truncate text-xs text-zinc-500">{demo.file?.name ?? demo.name}</p>
                   <audio
                     ref={(el) => {
                       demoAudioRefs.current[demo.id] = el;
@@ -529,16 +564,29 @@ export function AiVoiceMatchingLab() {
       <div className="mb-8 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => void runMatching()}
-          disabled={isMatching || !aiVocal || demos.length === 0}
+          onClick={() => {
+            void handleRunMatching();
+          }}
+          disabled={isProcessing}
+          aria-busy={isProcessing}
           className="rounded-xl border border-amber-400/45 bg-gradient-to-r from-amber-500/25 via-orange-500/20 to-rose-500/15 px-5 py-2.5 text-sm font-semibold text-amber-50 shadow-[0_0_24px_rgba(251,191,36,0.12)] transition hover:border-amber-300/60 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isMatching ? "Processing audio…" : "Run AI Matching"}
+          {isProcessing ? "Processing audio…" : "Run AI Matching"}
         </button>
-        {isMatching && (
+        {isProcessing && (
           <span className="text-sm text-zinc-400">Processing audio…</span>
         )}
-        {matchError && <p className="text-sm text-rose-300">{matchError}</p>}
+        {!isProcessing && !aiVocal && (
+          <p className="text-sm text-amber-200/80">Нужен AI vocal.</p>
+        )}
+        {!isProcessing && aiVocal && demos.length === 0 && (
+          <p className="text-sm text-amber-200/80">Нужен хотя бы один demo.</p>
+        )}
+        {matchError && (
+          <p className="w-full text-sm text-rose-300" role="alert">
+            {matchError}
+          </p>
+        )}
       </div>
 
       <LabSection
@@ -547,7 +595,7 @@ export function AiVoiceMatchingLab() {
       >
         {results.length === 0 ? (
           <p className="text-sm text-zinc-500">
-            {isMatching ? "Processing audio…" : "Run matching to see match scores."}
+            {isProcessing ? "Processing audio…" : "Run matching to see match scores."}
           </p>
         ) : (
           <>

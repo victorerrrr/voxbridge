@@ -132,6 +132,8 @@ ECAPA_EMBED_DIM = 192
 ECAPA_SAMPLE_RATE = 16000
 MAX_AUDIO_SECONDS = 10
 REQUEST_TIMEOUT_SEC = 30
+# Vocal separation on AI reference (slow: model download + CPU). Off for MVP lab stability.
+USE_DEMUCS = False
 # Rough CPU budget to attempt one Demucs pass on the AI vocal.
 DEMUCS_MIN_REMAINING_SEC = 2.5
 DEMUCS_MODEL_NAME = os.environ.get("DEMUCS_MODEL", "htdemucs")
@@ -310,6 +312,8 @@ def get_classifier() -> Any:
 
 
 def get_demucs_model():
+    if not USE_DEMUCS:
+        raise RuntimeError("Demucs is disabled (USE_DEMUCS=False)")
     global _demucs_model
     if _demucs_model is None:
         _clear_proxy_env()
@@ -327,7 +331,12 @@ async def lifespan(_: FastAPI):
     try:
         _clear_proxy_env()
         get_classifier()
-        logger.info("Voice matching model ready.")
+        if USE_DEMUCS:
+            logger.info("Voice matching model ready (Demucs enabled).")
+        else:
+            logger.info(
+                "Voice matching model ready (Demucs disabled; USE_DEMUCS=False)."
+            )
     except Exception as exc:
         logger.warning("Model preload skipped (will retry on first request): %s", exc)
     yield
@@ -1602,12 +1611,13 @@ def _finalize_voice_match_results(
         demo_pitch_dict = demo_pitch if isinstance(demo_pitch, dict) else {}
         demo_timbre_dict = row.pop("_demo_timbre", None)
         demo_waveform = row.pop("_demo_waveform", None)
-        ai_timbre_dict = row.pop("_ai_timbre", None) or (
-            results[0].get("_ai_timbre") if results else None
-        )
-        ai_waveform = row.pop("_ai_waveform", None) or (
-            results[0].get("_ai_waveform") if results else None
-        )
+        ai_timbre_dict = row.pop("_ai_timbre", None)
+        if ai_timbre_dict is None and results:
+            ai_timbre_dict = results[0].get("_ai_timbre")
+        ai_waveform = row.pop("_ai_waveform", None)
+        # Tensor cannot be used in boolean context (`or` / `if tensor`).
+        if ai_waveform is None and results:
+            ai_waveform = results[0].get("_ai_waveform")
         _refresh_pitch_vocal_classification(
             ai_pitch_dict,
             timbre=ai_timbre_dict if isinstance(ai_timbre_dict, dict) else None,
@@ -1746,6 +1756,17 @@ def _save_upload(upload: UploadFile, directory: str) -> Path:
     with dest.open("wb") as out:
         shutil.copyfileobj(upload.file, out)
     return dest
+
+
+def _save_demo_upload(
+    upload: UploadFile, directory: str, *, index: int
+) -> tuple[Path, str]:
+    """Save one demo upload; path is unique, result filename is the original name."""
+    display_name = Path(upload.filename or f"demo_{index}.wav").name
+    dest = Path(directory) / f"demo_{index}_{display_name}"
+    with dest.open("wb") as out:
+        shutil.copyfileobj(upload.file, out)
+    return dest, display_name
 
 
 def load_audio_to_wav(path: str, work_dir: str | None = None) -> str:
@@ -1915,11 +1936,14 @@ def _waveform_for_embedding(
 
     truncated = _truncate_waveform(waveform, sample_rate)
 
-    use_demucs = run_demucs
+    use_demucs = run_demucs and USE_DEMUCS
     if use_demucs and budget is not None:
         if budget.exceeded() or budget.remaining() < DEMUCS_MIN_REMAINING_SEC:
             use_demucs = False
             logger.warning("Skipping Demucs for %s (time budget)", label)
+
+    if not USE_DEMUCS and run_demucs:
+        logger.debug("Demucs skipped for %s (USE_DEMUCS=False)", label)
 
     if use_demucs:
         if step is not None:
@@ -3042,7 +3066,7 @@ def _run_voice_match(
 @app.post("/voice-match")
 async def voice_match(
     ai_vocal: Annotated[UploadFile, File()],
-
+    demos: Annotated[list[UploadFile], File()],
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3050,25 +3074,39 @@ async def voice_match(
     budget = RequestBudget()
     progress = VoiceMatchProgress()
     try:
-        demos_dir = Path("demos")
-        demo_files = list(demos_dir.glob("*.wav"))
-
         ai_name = Path(ai_vocal.filename or "").name or "(unnamed)"
-        demo_names = [d.name for d in demo_files]
+        demo_names = [
+            Path(d.filename or f"demo_{i}.wav").name for i, d in enumerate(demos)
+        ]
         logger.info("ai_vocal filename: %s", ai_name)
         logger.info("demos count: %d", len(demo_names))
+        if demo_names:
+            logger.info("demo filenames: %s", ", ".join(demo_names))
 
         if not ai_vocal.filename:
             return _json_error(422, "Missing required field: ai_vocal", "missing_ai_vocal")
+        if not demos:
+            return _json_error(
+                422,
+                "Missing required field: demos (upload at least one demo file)",
+                "missing_demos",
+            )
 
-       
         temp_dir = tempfile.mkdtemp(prefix="voxbridge-voice-match-")
         ai_path = _save_upload(ai_vocal, temp_dir)
         demo_entries: list[tuple[Path, str]] = []
-        for demo in demo_files:
-            demo_entries.append((demo, demo.name))
+        for index, demo_upload in enumerate(demos):
+            if not demo_upload.filename:
+                return _json_error(
+                    422,
+                    f"Demo upload at index {index} has no filename",
+                    "invalid_demo_upload",
+                )
+            demo_path, display_name = _save_demo_upload(
+                demo_upload, temp_dir, index=index
+            )
+            demo_entries.append((demo_path, display_name))
 
-        
         outcome = await asyncio.wait_for(
             asyncio.to_thread(
                 _run_voice_match, temp_dir, ai_path, demo_entries, progress

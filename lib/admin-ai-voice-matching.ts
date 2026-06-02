@@ -1,12 +1,15 @@
 export const VOICE_MATCH_API_URL =
-  process.env.NEXT_PUBLIC_VOICE_MATCH_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_VOICE_MATCH_API_URL ?? "http://127.0.0.1:8000";
+
+/** Full POST URL for multipart voice matching (lab + API client). */
+export const VOICE_MATCH_REQUEST_URL = `${VOICE_MATCH_API_URL.replace(/\/$/, "")}/voice-match`;
 
 export type VocalistDemoItem = {
   id: string;
   name: string;
   audioUrl: string;
-  source: "upload" | "mock";
-  file?: File;
+  source: "upload";
+  file: File;
 };
 
 export type VoiceMatchScoreBreakdown = {
@@ -1385,12 +1388,12 @@ function enforceStrictlyDecreasingMatchPercents(
 
 /**
  * Map final_ranking_score to 0–100% for display (min–max over the result set).
- * Backend uses lower final_ranking_score = better rank; invert so best row → 100%.
+ * Backend sorts descending by final_ranking_score (higher = better match).
  * Preserves row order; single row → 100%.
  *
  * Verification:
  * - [50, 50, 50] → 100%, 75%, 50% (equal-score rank fallback)
- * - [0, 0.001, 80] → ~100%, 75%, 0% (min–max + strict decrease fixes rounded tie at #2)
+ * - [80, 70, 60] → 100%, 50%, 0% (higher score = higher %)
  */
 export function normalizeFinalRankingScoresForDisplay(
   results: AiVoiceMatchResult[]
@@ -1415,7 +1418,10 @@ export function normalizeFinalRankingScoresForDisplay(
   } else {
     const useSoftSpread = spread < MATCH_PERCENT_SOFT_SPREAD_THRESHOLD;
     const effectiveScores = useSoftSpread
-      ? results.map((row, index) => row.finalRankingScore + index * MATCH_PERCENT_SOFT_SPREAD_EPSILON)
+      ? results.map(
+          (row, index) =>
+            row.finalRankingScore - index * MATCH_PERCENT_SOFT_SPREAD_EPSILON
+        )
       : scores;
 
     const adjMin = Math.min(...effectiveScores);
@@ -1431,7 +1437,7 @@ export function normalizeFinalRankingScoresForDisplay(
         const raw = useSoftSpread
           ? effectiveScores[index]
           : row.finalRankingScore;
-        return ((adjMax - raw) / adjSpread) * 100;
+        return ((raw - adjMin) / adjSpread) * 100;
       });
     }
   }
@@ -1598,6 +1604,35 @@ export function finalizeMatchDisplayForResults(
   return applyStrictDecreaseToResults(reconciled);
 }
 
+/** Pick backend rank/score field (higher = better match; matches API sort). */
+export function resolveApiRankingScore(row: VoiceMatchApiRow): number {
+  const candidates: unknown[] = [
+    row.final_ranking_score,
+    row.final_score,
+    row.score,
+    row.similarity,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+/** Use API match_percent when present and finite. */
+export function resolveApiMatchPercent(row: VoiceMatchApiRow): number | null {
+  if (
+    typeof row.match_percent === "number" &&
+    Number.isFinite(row.match_percent)
+  ) {
+    return roundMatchPercent(
+      Math.max(0, Math.min(100, row.match_percent))
+    );
+  }
+  return null;
+}
+
 /** One row from POST /voice-match (pre-sorted by backend rank; do not re-sort). */
 export type VoiceMatchApiRow = {
   index?: number;
@@ -1605,6 +1640,9 @@ export type VoiceMatchApiRow = {
   filename: string;
   similarity: number;
   final_ranking_score?: number;
+  final_score?: number;
+  score?: number;
+  match_percent?: number;
   vocal_type_match?: boolean;
   pitch_avg?: number;
   detected_vocal_type?: string;
@@ -1816,29 +1854,29 @@ function logFormDataPayload(
   });
 }
 
-/** POST AI vocal + demos to the voice-matching service. */
-export async function runVoiceMatching(
+/** Build multipart body: field `ai_vocal` + repeated `demos`. */
+export function buildVoiceMatchFormData(
   aiVocalFile: File,
   demos: VocalistDemoItem[]
-): Promise<AiVoiceMatchResult[]> {
+): { formData: FormData; demoInputs: VoiceMatchDemoInput[] } {
   if (!aiVocalFile.size) {
     throw new Error("AI vocal file is empty.");
   }
+  if (demos.length === 0) {
+    throw new Error("Add at least one vocalist demo file.");
+  }
 
-  const demoInputs: VoiceMatchDemoInput[] = await Promise.all(
-    demos.map(async (demo) => ({
+  const demoInputs: VoiceMatchDemoInput[] = demos.map((demo) => {
+    if (!demo.file?.size) {
+      throw new Error(`Demo file is missing or empty: ${demo.name}`);
+    }
+    return {
       id: demo.id,
       name: demo.name,
       audioUrl: demo.audioUrl,
-      file: await resolveDemoFile(demo),
-    }))
-  );
-
-  for (const demo of demoInputs) {
-    if (!demo.file.size) {
-      throw new Error(`Demo file is empty: ${demo.name}`);
-    }
-  }
+      file: demo.file,
+    };
+  });
 
   const formData = new FormData();
   formData.append("ai_vocal", aiVocalFile, aiVocalFile.name);
@@ -1846,79 +1884,94 @@ export async function runVoiceMatching(
     formData.append("demos", demo.file, demo.file.name);
   }
 
-  const url = `${VOICE_MATCH_API_URL}/voice-match`;
-  console.log("[voice-match] POST", url);
-  console.log("[voice-match] API base:", VOICE_MATCH_API_URL);
-  logFormDataPayload(aiVocalFile, demoInputs);
+  return { formData, demoInputs };
+}
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      body: formData,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Network request failed";
-    console.error("[voice-match] fetch failed:", err);
-    throw new Error(
-      `Voice match request failed (network/CORS?): ${message}. Target: ${url}. If the browser console shows a CORS error, open the Next app at http://localhost:3000 or http://127.0.0.1:3000 (ports 3000–3002 are allowed).`
-    );
+function parseVoiceMatchResponseText(
+  responseText: string,
+  status: number
+): { rows: VoiceMatchApiResponse; aiReference?: VoiceMatchApiEnvelope["ai_reference"] } {
+  if (!responseText.trim()) {
+    throw voiceMatchHttpError(status, "Empty response body");
   }
 
-  console.log("[voice-match] response status:", response.status);
-
-  const responseText = await response.text();
-  console.log("[voice-match] response body:", responseText);
-
-  if (!response.ok) {
-    const detail = await (async () => {
-      if (!responseText.trim()) return response.statusText || "Empty response body";
-      try {
-        const json = JSON.parse(responseText) as {
-          detail?: unknown;
-          message?: string;
-          error?: string;
-          step?: string;
-        };
-        if (typeof json.error === "string" && json.error) {
-          const step =
-            typeof json.step === "string" && json.step ? ` (step: ${json.step})` : "";
-          return `${json.error}${step}`;
-        }
-        const fromDetail = formatApiDetail(json.detail);
-        if (fromDetail) return fromDetail;
-        if (typeof json.message === "string" && json.message) return json.message;
-        return responseText;
-      } catch {
-        return responseText;
-      }
-    })();
-    throw voiceMatchHttpError(response.status, detail);
-  }
-
-  let rows: VoiceMatchApiResponse;
-  let aiReference: VoiceMatchApiEnvelope["ai_reference"];
+  let parsed: VoiceMatchApiResponse | VoiceMatchApiEnvelope;
   try {
-    const parsed = JSON.parse(responseText) as
+    parsed = JSON.parse(responseText) as
       | VoiceMatchApiResponse
       | VoiceMatchApiEnvelope;
-    if (Array.isArray(parsed)) {
-      rows = parsed;
-    } else if (parsed && Array.isArray(parsed.results)) {
-      rows = parsed.results;
-      aiReference = parsed.ai_reference;
-      if (parsed.partial) {
-        console.warn("[voice-match] partial results (degraded mode)");
-      }
-    } else {
-      throw new Error("unexpected shape");
-    }
   } catch {
     throw new Error(
-      `Voice match API returned invalid JSON (HTTP ${response.status}).`
+      `Voice match API returned invalid JSON (HTTP ${status}).`
     );
   }
+
+  if (Array.isArray(parsed)) {
+    return { rows: parsed };
+  }
+  if (parsed && Array.isArray(parsed.results)) {
+    if (parsed.partial) {
+      console.warn("[voice-match] partial results (degraded mode)");
+    }
+    return { rows: parsed.results, aiReference: parsed.ai_reference };
+  }
+  throw new Error("Voice match API returned unexpected JSON shape.");
+}
+
+function formatVoiceMatchHttpErrorDetail(
+  responseText: string,
+  status: number
+): string {
+  if (!responseText.trim()) return `HTTP ${status}`;
+  try {
+    const json = JSON.parse(responseText) as {
+      detail?: unknown;
+      message?: string;
+      error?: string;
+      step?: string;
+    };
+    if (typeof json.error === "string" && json.error) {
+      const step =
+        typeof json.step === "string" && json.step ? ` (step: ${json.step})` : "";
+      return `${json.error}${step}`;
+    }
+    const fromDetail = formatApiDetail(json.detail);
+    if (fromDetail) return fromDetail;
+    if (typeof json.message === "string" && json.message) return json.message;
+    return responseText;
+  } catch {
+    return responseText;
+  }
+}
+
+/** Map API JSON rows to lab display models (preserves backend order). */
+export function mapVoiceMatchResultsFromApi(
+  responseText: string,
+  status: number,
+  demoInputs: VoiceMatchDemoInput[]
+): AiVoiceMatchResult[] {
+  if (status < 200 || status >= 300) {
+    throw voiceMatchHttpError(
+      status,
+      formatVoiceMatchHttpErrorDetail(responseText, status)
+    );
+  }
+
+  const { rows, aiReference } = parseVoiceMatchResponseText(responseText, status);
+
+  console.log("[voice-match] API results (raw):", rows);
+  console.log(
+    "[voice-match] score fields per row:",
+    rows.map((row) => ({
+      filename: row.filename,
+      final_ranking_score: row.final_ranking_score,
+      final_score: row.final_score,
+      score: row.score,
+      similarity: row.similarity,
+      match_percent: row.match_percent,
+      resolved_rank: resolveApiRankingScore(row),
+    }))
+  );
 
   // Preserve backend order; do not re-sort client-side.
   const mapped = rows.map((row, listIndex) => {
@@ -1926,11 +1979,8 @@ export async function runVoiceMatching(
         demoInputs.find((d) => matchDemoToApiRow(d, row)) ??
         demoInputs.find((d) => row.filename.includes(d.name));
 
-      const finalRankingScore =
-        typeof row.final_ranking_score === "number" &&
-        Number.isFinite(row.final_ranking_score)
-          ? row.final_ranking_score
-          : row.similarity;
+      const finalRankingScore = resolveApiRankingScore(row);
+      const apiMatchPercent = resolveApiMatchPercent(row);
 
       const index =
         typeof row.index === "number" && Number.isFinite(row.index)
@@ -1956,7 +2006,7 @@ export async function runVoiceMatching(
         filename: row.filename,
         vocalistName: demo?.name ?? row.filename.replace(/\.[^.]+$/, ""),
         similarity: row.similarity,
-        matchPercent: 0,
+        matchPercent: apiMatchPercent ?? 0,
         finalRankingScore,
         vocalTypeMatch: row.vocal_type_match !== false,
         pitchAvg: finiteScore(row.pitch_avg),
@@ -2003,11 +2053,60 @@ export async function runVoiceMatching(
       };
     });
   const demoted = applyRealVoice1Demotion(mapped);
-  const normalized = normalizeFinalRankingScoresForDisplay(demoted);
+  const useApiMatchPercents =
+    rows.length > 0 && rows.every((row) => resolveApiMatchPercent(row) !== null);
+  const normalized = useApiMatchPercents
+    ? demoted.map((row) => {
+        const apiPct = resolveApiMatchPercent(
+          rows.find((r) => r.filename === row.filename) ?? rows[0]
+        );
+        return apiPct != null ? { ...row, matchPercent: apiPct } : row;
+      })
+    : normalizeFinalRankingScoresForDisplay(demoted);
+  console.log(
+    "[voice-match] matchPercent after normalize:",
+    normalized.map((r) => ({
+      filename: r.filename,
+      finalRankingScore: r.finalRankingScore,
+      matchPercent: r.matchPercent,
+    }))
+  );
   const capped = applyMatchPercentDisplayCap(normalized);
   const aiContext = buildMatchComparisonAiContext(capped) ?? undefined;
   const displayFinalized = finalizeMatchDisplayForResults(capped, aiContext);
   return assignUniqueFeatureTagsToResults(displayFinalized, aiContext);
+}
+
+/** POST AI vocal + demos to the voice-matching service. */
+export async function runVoiceMatching(
+  aiVocalFile: File,
+  demos: VocalistDemoItem[]
+): Promise<AiVoiceMatchResult[]> {
+  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos);
+  logFormDataPayload(aiVocalFile, demoInputs);
+  console.log("sending voice-match request");
+  console.log("[voice-match] POST", VOICE_MATCH_REQUEST_URL);
+
+  let response: Response;
+  try {
+    response = await fetch(VOICE_MATCH_REQUEST_URL, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Network request failed";
+    console.error("[voice-match] fetch failed:", err);
+    throw new Error(
+      `Voice match request failed (network/CORS?): ${message}. Target: ${VOICE_MATCH_REQUEST_URL}. If the browser console shows a CORS error, open the Next app at http://localhost:3000 or http://127.0.0.1:3000 (ports 3000–3002 are allowed).`
+    );
+  }
+
+  console.log("[voice-match] response status:", response.status);
+  const responseText = await response.text();
+  console.log("[voice-match] response body:", responseText.slice(0, 500));
+
+  return mapVoiceMatchResultsFromApi(responseText, response.status, demoInputs);
 }
 
 function mockComparisonRow(
