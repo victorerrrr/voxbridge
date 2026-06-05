@@ -515,6 +515,86 @@ export function AiVoiceMatchingLab() {
         )}
       </LabSection>
 
+      {/* Voice Character Tags */}
+      <div className="rounded-lg border border-white/10 bg-white/5 p-6 mb-8">
+        <h2 className="text-lg font-semibold text-white mb-1">Voice Character</h2>
+        <p className="text-sm text-white/50 mb-4">
+          Describe the AI vocal to improve matching accuracy.
+        </p>
+        {[
+          {
+            key: "tonal",
+            label: "Tonal character",
+            options: [
+              "warm",
+              "bright",
+              "dark",
+              "airy",
+              "gritty",
+              "raspy",
+              "soft",
+              "deep",
+            ],
+          },
+          {
+            key: "emotional",
+            label: "Emotional vibe",
+            options: [
+              "intimate",
+              "melancholic",
+              "seductive",
+              "energetic",
+              "neutral",
+            ],
+          },
+          {
+            key: "movement",
+            label: "Vocal movement",
+            options: ["flowing", "legato", "rhythmic", "syncopated", "staccato"],
+          },
+          {
+            key: "density",
+            label: "Density",
+            options: ["sparse", "dense", "layered"],
+          },
+        ].map(({ key, label, options }) => (
+          <div key={key} className="mb-4">
+            <p className="text-xs text-white/60 uppercase tracking-wide mb-2">
+              {label}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {options.map((opt) => {
+                const active = (selectedQueryTags[key] || []).includes(opt);
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => {
+                      setSelectedQueryTags((prev) => {
+                        const current = prev[key] || [];
+                        return {
+                          ...prev,
+                          [key]: active
+                            ? current.filter((v) => v !== opt)
+                            : [...current, opt],
+                        };
+                      });
+                    }}
+                    className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                      active
+                        ? "bg-orange-500/20 border-orange-500 text-orange-300"
+                        : "bg-white/5 border-white/10 text-white/60 hover:border-white/30"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
       <LabSection
         title="Vocalist Demos"
         description="Upload one or more demo files — only these files are sent to matching (not a server folder)."
