@@ -1868,7 +1868,8 @@ function logFormDataPayload(
 /** Build multipart body: field `ai_vocal` + repeated `demos`. */
 export function buildVoiceMatchFormData(
   aiVocalFile: File,
-  demos: VocalistDemoItem[]
+  demos: VocalistDemoItem[],
+  queryTags?: Record<string, string[]>
 ): { formData: FormData; demoInputs: VoiceMatchDemoInput[] } {
   if (!aiVocalFile.size) {
     throw new Error("AI vocal file is empty.");
@@ -1902,6 +1903,9 @@ export function buildVoiceMatchFormData(
     formData.append("demos", demo.file, demo.originalFileName);
   }
 
+  if (queryTags && Object.keys(queryTags).length > 0) {
+    formData.append("query_tags", JSON.stringify(queryTags));
+  }
   return { formData, demoInputs };
 }
 
