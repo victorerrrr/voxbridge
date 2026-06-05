@@ -264,6 +264,9 @@ export function AiVoiceMatchingLab() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [processedFileCount, setProcessedFileCount] = useState<number | null>(null);
+  const [selectedQueryTags, setSelectedQueryTags] = useState<
+    Record<string, string[]>
+  >({});
   const aiVocalInputRef = useRef<HTMLInputElement>(null);
   const demoUploadRef = useRef<HTMLInputElement>(null);
   const aiAudioRef = useRef<HTMLAudioElement>(null);
@@ -383,7 +386,8 @@ export function AiVoiceMatchingLab() {
     try {
       const { formData, demoInputs } = buildVoiceMatchFormData(
         aiVocal.file,
-        demos
+        demos,
+        selectedQueryTags
       );
 
       console.log("sending voice-match request", {
@@ -450,7 +454,7 @@ export function AiVoiceMatchingLab() {
     } finally {
       setIsProcessing(false);
     }
-  }, [aiVocal, demos]);
+  }, [aiVocal, demos, selectedQueryTags]);
 
   const playAiVocal = () => {
     if (!aiVocal?.objectUrl) return;
