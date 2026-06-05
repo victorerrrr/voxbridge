@@ -2552,6 +2552,100 @@ def compute_timbre_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[
     }
 
 
+def _empty_vocal_character_features() -> dict[str, float]:
+    return {
+        "breathiness": 0.0,
+        "vibrato_rate": 0.0,
+        "vibrato_depth": 0.0,
+        "vocal_weight": 0.0,
+        "melodic_range_semitones": 0.0,
+        "pitch_stability": 0.0,
+        "articulation_speed": 0.0,
+        "dynamic_range": 0.0,
+    }
+
+
+def compute_vocal_character_features(
+    waveform: Any, sr: int = ECAPA_SAMPLE_RATE
+) -> dict[str, float]:
+    """Extract advanced vocal character features: breathiness, vibrato, vocal weight, melodic range."""
+    import librosa
+
+    y = _waveform_to_numpy(waveform)
+    if y is None or y.size == 0:
+        return _empty_vocal_character_features()
+    try:
+        harmonic, _percussive = librosa.effects.hpss(y)
+        harmonic_energy = float(np.mean(harmonic**2))
+        total_energy = float(np.mean(y**2)) + 1e-9
+        breathiness = float(1.0 - min(harmonic_energy / total_energy, 1.0))
+
+        f0, voiced_flag, _ = librosa.pyin(y, fmin=60, fmax=1100, sr=sr)
+        if voiced_flag is not None:
+            mask = np.asarray(voiced_flag, dtype=bool) & np.isfinite(f0) & (f0 > 0)
+            f0_voiced = f0[mask]
+        else:
+            f0_voiced = np.array([], dtype=np.float64)
+
+        vibrato_rate = 0.0
+        vibrato_depth = 0.0
+        if f0_voiced.size > 16:
+            f0_mean = float(np.mean(f0_voiced))
+            semitones = 12.0 * np.log2(f0_voiced / (f0_mean + 1e-9) + 1e-9)
+            centered = semitones - np.mean(semitones)
+            fft = np.abs(np.fft.rfft(centered))
+            freqs = np.fft.rfftfreq(centered.size, d=512 / sr)
+            vibrato_band = (freqs >= 4.5) & (freqs <= 8.5)
+            if vibrato_band.any():
+                band_fft = fft[vibrato_band]
+                band_freqs = freqs[vibrato_band]
+                peak_i = int(np.argmax(band_fft))
+                vibrato_rate = float(band_freqs[peak_i])
+                vibrato_depth = float(np.max(band_fft) / (np.mean(fft) + 1e-9))
+
+        melodic_range = 0.0
+        if f0_voiced.size > 4:
+            f0_min = float(np.min(f0_voiced))
+            semitones_abs = 12.0 * np.log2(f0_voiced / (f0_min + 1e-9) + 1e-9)
+            melodic_range = float(
+                np.percentile(semitones_abs, 95) - np.percentile(semitones_abs, 5)
+            )
+
+        pitch_stability = 0.0
+        if f0_voiced.size > 4:
+            pitch_stability = float(
+                1.0 / (np.std(f0_voiced) / (np.mean(f0_voiced) + 1e-9) + 1e-9)
+            )
+            pitch_stability = min(pitch_stability / 10.0, 1.0)
+
+        rms = float(np.mean(librosa.feature.rms(y=y)))
+        centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+        vocal_weight = float(
+            min(rms * 100 + (1.0 - min(centroid / 4000, 1.0)) * 0.5, 1.0)
+        )
+
+        onsets = librosa.onset.onset_detect(y=y, sr=sr, units="time")
+        duration = float(librosa.get_duration(y=y, sr=sr))
+        articulation_speed = float(len(onsets) / max(duration, 1.0))
+
+        rms_frames = librosa.feature.rms(y=y)[0]
+        dynamic_range = float(np.std(rms_frames) / (np.mean(rms_frames) + 1e-9))
+
+        return {
+            "breathiness": round(breathiness, 3),
+            "vibrato_rate": round(vibrato_rate, 2),
+            "vibrato_depth": round(min(vibrato_depth / 10.0, 1.0), 3),
+            "vocal_weight": round(vocal_weight, 3),
+            "melodic_range_semitones": round(melodic_range, 1),
+            "pitch_stability": round(pitch_stability, 3),
+            "articulation_speed": round(articulation_speed, 2),
+            "dynamic_range": round(dynamic_range, 3),
+        }
+    except Exception as exc:
+        logger.debug("compute_vocal_character_features failed: %s", exc)
+        return _empty_vocal_character_features()
+
+
 def _range_overlap_percent(a_min: float, a_max: float, b_min: float, b_max: float) -> float:
     if a_max <= a_min or b_max <= b_min:
         return 0.0
