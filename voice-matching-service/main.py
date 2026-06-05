@@ -3238,6 +3238,9 @@ def _run_voice_match(
             step_ref[0] = "features"
             demo_pitch = compute_pitch_features(demo_waveform)
             demo_timbre = compute_timbre_features(demo_waveform)
+            demo_vocal_character = compute_vocal_character_features(
+                demo_waveform, ECAPA_SAMPLE_RATE
+            )
             timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             _apply_multi_feature_vocal_classification(
                 demo_pitch,
@@ -3248,6 +3251,18 @@ def _run_voice_match(
             demo_row: dict = {
                 "filename": demo_filename,
                 "original_filename": demo_filename,
+                "breathiness": demo_vocal_character.get("breathiness", 0.0),
+                "vibrato_rate": demo_vocal_character.get("vibrato_rate", 0.0),
+                "vibrato_depth": demo_vocal_character.get("vibrato_depth", 0.0),
+                "vocal_weight": demo_vocal_character.get("vocal_weight", 0.0),
+                "melodic_range_semitones": demo_vocal_character.get(
+                    "melodic_range_semitones", 0.0
+                ),
+                "pitch_stability": demo_vocal_character.get("pitch_stability", 0.0),
+                "articulation_speed": demo_vocal_character.get(
+                    "articulation_speed", 0.0
+                ),
+                "dynamic_range": demo_vocal_character.get("dynamic_range", 0.0),
             }
             _apply_demo_vocal_type_fields(
                 demo_row,
