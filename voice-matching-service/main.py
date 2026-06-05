@@ -2572,6 +2572,9 @@ def compute_vocal_character_features(
     import librosa
 
     y = _waveform_to_numpy(waveform)
+    # Trim audio to 5 seconds for fast feature extraction
+    if y is not None and len(y) > sr * 5:
+        y = y[: sr * 5]
     if y is None or y.size == 0:
         return _empty_vocal_character_features()
     try:
@@ -2580,7 +2583,10 @@ def compute_vocal_character_features(
         total_energy = float(np.mean(y**2)) + 1e-9
         breathiness = float(1.0 - min(harmonic_energy / total_energy, 1.0))
 
-        f0, voiced_flag, _ = librosa.pyin(y, fmin=60, fmax=1100, sr=sr)
+        # --- Pitch track ---
+        # Trim to max 5 seconds for speed
+        y_short = y[: sr * 5] if len(y) > sr * 5 else y
+        f0, voiced_flag, _ = librosa.pyin(y_short, fmin=60, fmax=1100, sr=sr)
         if voiced_flag is not None:
             mask = np.asarray(voiced_flag, dtype=bool) & np.isfinite(f0) & (f0 > 0)
             f0_voiced = f0[mask]
