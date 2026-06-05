@@ -106,8 +106,19 @@ curl -X POST http://localhost:8000/voice-match \
 2. Each decoded WAV is **trimmed to the first 10 seconds immediately** (`Audio trimmed to 10 seconds` in logs). Long uploads never reach Demucs or ECAPA un-trimmed.
 3. **Demucs** (`htdemucs` by default) runs on the **AI vocal only** (CPU, 10 s segment, `shifts=0`, `split=False`). Demo clips skip Demucs and use the trimmed mix for speed. If separation fails or the **30 s** request budget is tight, the AI vocal falls back to the trimmed mix (see logs: `demucs start` / `Skipping Demucs` / `Fallback used`).
 4. SpeechBrain ECAPA-TDNN extracts speaker embeddings per **chunk** (mono 16 kHz).
-5. Embeddings are L2-normalized; per-chunk cosine similarity is **RMS-weighted** across aligned windows → **`speaker_score`** (0–100).
-6. **Vocal feature scoring v2** on the same trimmed mono 16 kHz waveforms: pitch (median F0, semitone distance), timbre (MFCC + spectral shape), and **quality** (demo vs AI-aware).
+5. Embeddings are L2-normalized; per-chunk cosine similarity is **RMS-weighted** across aligned windows → **`speaker_score_ecapa`** (0–100), then **musical supplement** → **`speaker_score`** (see below).
+6. **Vocal feature scoring v2** on the same trimmed mono 16 kHz waveforms: pitch (median F0, semitone distance, **pitch_std_semitones** variance), timbre (MFCC + spectral shape), and **quality** (demo vs AI-aware).
+
+**Speaker score supplement** (melodic AI reference vs monotone/recitative demos):
+
+| Cue | Weight | Field |
+|-----|--------|-------|
+| ECAPA embedding | **55%** | `speaker_score_ecapa` |
+| Pitch melodicity (variance vs AI) | **25%** | `pitch_melodicity_score` — penalizes low `pitch_std_semitones` |
+| MFCC cosine | **12%** | `mfcc_cosine_score` |
+| Spectral centroid proximity | **8%** | `spectral_centroid_score` |
+
+`speaker_score = 0.55×ecapa + 0.25×melodicity + 0.12×mfcc + 0.08×centroid` (used in composite `similarity` and ranking).
 7. **Final `similarity`** = v4.1 weighted blend, proportional vocal-type penalty (**×0.55–0.65**), rank penalty on mismatch only (**−8**), optional alignment bonus, **v4.2** rank-preserving stretch across demos, vocal-type ceiling (**75%** / **82%**) on mismatches only, global floor (**20**) at the very end, then hard similarity caps (see below). API list order uses **`final_ranking_score`** (see **Gender-priority ranking**); displayed `similarity` is not rewritten.
 
 ### Chunk averaging
@@ -135,16 +146,18 @@ Constants: `NORMALIZE_*`, `RANK_MIN_GAP`, `RANK_BOOST_BY_POSITION` (plus v4.1 we
 
 | Component | Weight | Field | Notes |
 |-----------|--------|-------|--------|
-| Speaker embedding | **34%** | `speaker_score` | Energy-weighted chunk ECAPA cosine; **0.92×** if only one chunk pair |
-| Timbre | **28%** | `timbre_score` | 50% mean MFCC cosine, 25% centroid, 25% bandwidth |
-| Pitch | **33%** | `pitch_score` | Median F0, semitone distance, range overlap, register (wider when voiced fraction low); floor **28** |
+| Speaker embedding | **60%** | `speaker_score` | Energy-weighted chunk ECAPA cosine; **0.92×** if only one chunk pair; primary rank signal |
+| Timbre | **20%** | `timbre_score` | 50% mean MFCC cosine, 25% centroid, 25% bandwidth |
+| Pitch | **15%** | `pitch_score` | Median F0, semitone distance, range overlap, register (wider when voiced fraction low); floor **28** |
 | Audio quality | **5%** | `quality_score` | Demo heuristic; softer penalty when close to AI reference quality |
 
 Target bands after calibration: clearly different voices **20–40%**, partial match **40–70%**, strong match **70–85%** (before global caps).
 
 Constants in `main.py`: `V4_WEIGHTS`, `F0_RANGE_*`, `PITCH_MIDI_*`, `VOCAL_TYPE_*`, `VOCAL_MISMATCH_*`, `NORMALIZE_*`, `RANK_*`, `MIN_SIMILARITY_FLOOR`, `MAX_SIMILARITY_CAP*`, `ALIGNMENT_BONUS_*`, `SINGLE_CHUNK_SPEAKER_DISCOUNT`, `PITCH_SCORE_FLOOR`.
 
-**Raw composite:** `similarity_raw = 0.34×speaker + 0.28×timbre + 0.33×pitch + 0.05×quality`.
+**Raw composite:** `similarity_raw = 0.60×speaker + 0.20×timbre + 0.15×pitch + 0.05×quality`.
+
+**Rank key:** `final_ranking_score = similarity + 0.60×speaker_score − vocal-type penalties` (displayed `similarity` unchanged; sort tie-break prefers higher `speaker_score`).
 
 **Vocal type awareness (multi-feature, not pitch alone):** each AI vocal and demo gets `range_band` (Hz bands, internal), `pitch_avg` (median F0 as MIDI), and **`detected_vocal_type`** from `classify_vocal_type_multi_feature` (pitch + MFCC/centroid/bandwidth + optional low-band energy ratio):
 
@@ -211,8 +224,11 @@ After stretch, ceilings, caps, and `explanation` generation, demos are **re-sort
 **`final_ranking_score`** (per demo, drives API sort order):
 
 ```
-final_ranking_score = similarity − (vocal_type_distance × 20) − gender_mismatch_penalty − tier_penalty
+final_ranking_score = similarity + 0.60×speaker_score
+                    − (vocal_type_distance × 20) − gender_mismatch_penalty − tier_penalty
 ```
+
+(Displayed `similarity` is unchanged; only sort order uses the rank key above.)
 
 | Penalty | When |
 |---------|------|
@@ -220,7 +236,7 @@ final_ranking_score = similarity − (vocal_type_distance × 20) − gender_mism
 | **35** | AI **male** vs demo **female** when male pool exists; or generic male↔female pitch conflict |
 | **50** | `gender_priority_tier` **2** (tier 0 → **0**) |
 
-**Sort key** (primary → tiebreak): `final_ranking_score` **desc**, `gender_priority_tier` **asc**, `timbre_score` **desc**. Hard partition (confirmed female above male-pitch demos when applicable) preserves within-partition `final_ranking_score` order.
+**Sort key** (primary → tiebreak): `final_ranking_score` **desc**, `gender_priority_tier` **asc**, `speaker_score` **desc**. Hard partition (confirmed female above male-pitch demos when applicable) preserves within-partition `final_ranking_score` order.
 
 **Hard #1 rule (last step):** `_apply_hard_gender_partition_ranking` runs after all scores and `vocal_type_match` sorts. It uses demo **`final_vocal_type`** and **`ai_detected_vocal_type`** (not tier or raw similarity for the rule). When AI is **female** and any demo is **female**, list order is **female → unknown → male** (each group by `final_ranking_score` desc); a **male** `final_vocal_type` demo cannot be index 0. Symmetric for **male** AI with a **male** demo pool. Debug: `hard_gender_block_applied` is **true** on a blocked-type demo that was #1 before this partition; `hard_gender_rule_active` on the JSON envelope when the rule ran.
 

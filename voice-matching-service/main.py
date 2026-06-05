@@ -1,6 +1,40 @@
 import json
 import os
 
+# Загрузка тегов вокалистов
+import pathlib
+_TAGS_PATH = pathlib.Path(__file__).parent / "demos" / "tags.json"
+try:
+    with open(_TAGS_PATH, "r") as _f:
+        _DEMO_TAGS: dict = json.load(_f)
+except Exception:
+    _DEMO_TAGS = {}
+
+def _get_demo_tags(filename: str) -> dict:
+    """Возвращает теги для демо-файла по имени файла."""
+    if not filename:
+        return {}
+    base = pathlib.Path(filename).name
+    return _DEMO_TAGS.get(base, {})
+
+def _compute_tag_bonus(demo_tags: dict, query_tags: dict) -> float:
+    """Считает бонус за совпадение тегов. Веса по схеме с доски Миро."""
+    if not demo_tags or not query_tags:
+        return 0.0
+    bonus = 0.0
+    weights = {"tonal": 0.35, "emotional": 0.25, "movement": 0.15, "density": 0.05, "genre": 0.15}
+    for key, weight in weights.items():
+        demo_vals = set(demo_tags.get(key, []))
+        query_vals = set(query_tags.get(key, []))
+        if demo_vals and query_vals:
+            overlap = len(demo_vals & query_vals) / max(len(query_vals), 1)
+            bonus += overlap * weight * 20.0
+    style_match = demo_tags.get("style") == query_tags.get("style")
+    if style_match and demo_tags.get("style"):
+        bonus += 3.0
+    return round(bonus, 3)
+
+
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
     os.environ.pop(key, None)
 
@@ -1278,6 +1312,11 @@ def _compute_final_ranking_score(
         - distance * VOCAL_TYPE_RANK_DISTANCE_WEIGHT
         - mismatch_penalty
         - tier_penalty
+        - (max(0.0, 35.0 - float(row.get("pitch_score", 35))) * 1.2)
+    + _compute_tag_bonus(
+        _get_demo_tags(_demo_lookup_filename(row)),
+        row.get("_query_tags") or {}
+    )
     )
     return tier, _round_score(final)
 
@@ -1734,6 +1773,7 @@ def _apply_gender_priority_ranking(
 def _finalize_voice_match_results(
     results: list[dict],
     partial: bool,
+    query_tags: dict = None,
 ) -> dict[str, Any]:
     ai_pitch_features: dict[str, float | str] = {}
     if results:
@@ -1815,6 +1855,7 @@ def _finalize_voice_match_results(
             "ai_pitch_avg": _pitch_midi_value(ai_pitch_dict),
             "demo_pitch_avg": _pitch_midi_value(demo_pitch_dict),
         }
+        row["_query_tags"] = query_tags or {}
         row["explanation"] = generate_match_explanation(
             ai_pitch if isinstance(ai_pitch, dict) else {},
             demo_pitch if isinstance(demo_pitch, dict) else {},
@@ -3012,6 +3053,7 @@ def _run_voice_match(
     ai_path: Path,
     demo_entries: list[tuple[Path, str]],
     progress: VoiceMatchProgress | None = None,
+    query_tags: dict | None = None,
 ) -> list[dict] | dict[str, Any] | JSONResponse:
     budget = RequestBudget()
     step_ref: list[str] = ["loading"]
@@ -3215,7 +3257,7 @@ def _run_voice_match(
         )
 
     _sync_progress(progress, results, partial)
-    return _finalize_voice_match_results(results, partial=partial)
+    return _finalize_voice_match_results(results, partial=partial, query_tags=query_tags)
 
 
 @app.post("/voice-match")
@@ -3223,6 +3265,7 @@ async def voice_match(
     ai_vocal: Annotated[UploadFile, File()],
     demos: Annotated[list[UploadFile], File()],
     demo_display_names: Annotated[str | None, Form()] = None,
+    query_tags: Annotated[str | None, Form()] = None,
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3280,9 +3323,17 @@ async def voice_match(
             )
             demo_entries.append((demo_path, display_name))
 
+        # Парсим query_tags из строки JSON
+        parsed_query_tags = {}
+        if query_tags:
+            try:
+                parsed_query_tags = json.loads(query_tags)
+            except Exception:
+                parsed_query_tags = {}
+
         outcome = await asyncio.wait_for(
             asyncio.to_thread(
-                _run_voice_match, temp_dir, ai_path, demo_entries, progress
+                _run_voice_match, temp_dir, ai_path, demo_entries, progress, parsed_query_tags
             ),
             timeout=REQUEST_TIMEOUT_SEC,
         )

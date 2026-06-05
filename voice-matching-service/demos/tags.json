@@ -1,0 +1,42 @@
+{
+  "Real vocal 1.wav": {
+    "tonal": ["warm", "gritty", "raspy", "raw", "textured", "indie"],
+    "emotional": ["melancholic"],
+    "movement": ["rhythmic"],
+    "density": ["sparse"],
+    "gender": "male",
+    "style": "raw"
+  },
+  "Real vocal 2.wav": {
+    "tonal": ["warm", "airy", "soft", "natural"],
+    "emotional": ["intimate"],
+    "movement": ["flowing", "legato"],
+    "density": ["sparse"],
+    "gender": "female",
+    "style": "raw"
+  },
+  "Real vocal 3.wav": {
+    "tonal": ["warm", "deep"],
+    "emotional": ["melancholic"],
+    "movement": ["legato", "flowing"],
+    "density": ["layered"],
+    "gender": "male",
+    "style": "professional"
+  },
+  "Real vocal 4.wav": {
+    "tonal": ["bright", "dark"],
+    "emotional": ["melancholic"],
+    "movement": ["rhythmic"],
+    "density": ["dense"],
+    "gender": "female",
+    "style": "professional"
+  },
+  "Real vocal 5.wav": {
+    "tonal": ["dark", "deep"],
+    "emotional": ["seductive"],
+    "movement": ["rhythmic", "syncopated"],
+    "density": ["dense"],
+    "gender": "female",
+    "style": "produced"
+  }
+}
