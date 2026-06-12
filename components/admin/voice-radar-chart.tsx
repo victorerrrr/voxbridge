@@ -53,7 +53,7 @@ export function VoiceRadarChart({
   const dataPolygon = dataPoints.map((p) => `${p.x},${p.y}`).join(" ");
   const labelPoints = axisAngles.map((angle) => polarToXY(angle, maxR * 1.28, cx, cy));
   return (
-    <div style={{ position: "relative", width: size, height: size }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {gridPolygons.map((pts, i) => (
           <polygon key={i} points={pts} fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.8" />
