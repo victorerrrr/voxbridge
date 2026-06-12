@@ -13,6 +13,7 @@ import {
   AdminPageHeader,
   AdminTable,
 } from "@/components/admin/admin-ui";
+import { VoiceRadarChart } from "@/components/admin/voice-radar-chart";
 import {
   buildMatchComparisonAiContext,
   buildMatchComparisonSections,
@@ -807,6 +808,16 @@ export function AiVoiceMatchingLab() {
                     </p>
                     <div className="mt-0.5">
                       <VocalTypeDisplay row={row} />
+              <VoiceRadarChart
+                data={{
+                  timbre: row.timbre_score ?? 0,
+                  pitch: row.pitch_score ?? 0,
+                  quality: row.quality_score ?? 0,
+                  vocal_character: row.vocal_character_score ?? 0,
+                  speaker: row.speaker_score ?? 0,
+                }}
+                size={120}
+              />
                       {IS_DEV && (
                         <p className="text-[10px] tabular-nums text-zinc-600">
                           isTopMatch: {row.isTopMatch === true ? "true" : "false"}
