@@ -4477,3 +4477,32 @@ if __name__ == "__main__":
 
         port = int(os.environ.get("PORT", "8000"))
         uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
+
+@app.post("/precompute-demo")
+async def precompute_demo():
+    """Warm up demo profile cache for all files in demos/ directory."""
+    import pathlib
+    demos_dir = pathlib.Path("demos")
+    if not demos_dir.exists():
+        return {"status": "error", "message": "demos/ directory not found"}
+    demo_files = list(demos_dir.glob("*.wav")) + list(demos_dir.glob("*.mp3"))
+    results = []
+    for demo_path in demo_files:
+        cached = _load_demo_profile(str(demo_path))
+        if cached is not None:
+            results.append({"file": demo_path.name, "status": "cached"})
+            continue
+        try:
+            import torch as _torch
+            waveform, _ = _load_audio(str(demo_path))
+            embeddings = _compute_embeddings(waveform)
+            chunk_rms = _compute_chunk_rms(waveform)
+            pitch = compute_pitch_features(waveform)
+            timbre = compute_timbre_features(waveform)
+            vocal_character = compute_vocal_character_features(waveform)
+            _save_demo_profile(str(demo_path), waveform, embeddings, chunk_rms, pitch, timbre, vocal_character)
+            results.append({"file": demo_path.name, "status": "computed"})
+        except Exception as e:
+            results.append({"file": demo_path.name, "status": "error", "error": str(e)})
+    return {"status": "ok", "processed": len(results), "results": results}
