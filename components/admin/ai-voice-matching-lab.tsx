@@ -262,6 +262,7 @@ export function AiVoiceMatchingLab() {
   const [demos, setDemos] = useState<VocalistDemoItem[]>([]);
   const [results, setResults] = useState<AiVoiceMatchResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [genderOverride, setGenderOverride] = useState<string>("auto");
   const [aiLanguage, setAiLanguage] = useState<string>("");
   const [partLanguage, setPartLanguage] = useState<string>("");
   const [matchError, setMatchError] = useState<string | null>(null);
@@ -517,7 +518,16 @@ export function AiVoiceMatchingLab() {
         )}
       </LabSection>
 
-      {/* Language Fields */}
+      {/* Gender Override */}
+        <div className="mb-4">
+          <p className="text-xs text-white/50 mb-2">ПОЛ ГОЛОСА</p>
+          <div className="flex gap-2">
+            <button onClick={() => setGenderOverride("auto")} className={genderOverride === "auto" ? "px-3 py-1 rounded text-sm bg-white text-black" : "px-3 py-1 rounded text-sm bg-zinc-700 text-white"}>Авто</button>
+            <button onClick={() => setGenderOverride("female")} className={genderOverride === "female" ? "px-3 py-1 rounded text-sm bg-white text-black" : "px-3 py-1 rounded text-sm bg-zinc-700 text-white"}>Женский</button>
+            <button onClick={() => setGenderOverride("male")} className={genderOverride === "male" ? "px-3 py-1 rounded text-sm bg-white text-black" : "px-3 py-1 rounded text-sm bg-zinc-700 text-white"}>Мужской</button>
+          </div>
+        </div>
+        {/* Language Fields */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-xs text-white/50 mb-1">Language of AI vocal</label>
