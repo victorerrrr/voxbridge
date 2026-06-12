@@ -2439,6 +2439,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         "detected_vocal_type": "unknown",
         "pitch_avg": 0.0,
         "range_band": "unknown",
+            "hnr_db": 1.0,
     }
     y = _waveform_to_numpy(waveform)
     if y.size == 0:
@@ -2458,6 +2459,21 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
     else:
         register = "high"
     band_info = classify_vocal_type(median_f0_hz)
+        try:
+            import numpy as _np
+            frame_len = int(sr * 0.025)
+            hop_len = int(sr * 0.010)
+            frames = librosa.util.frame(y, frame_length=frame_len, hop_length=hop_len)
+            hnr_vals = []
+            for fr in frames.T:
+                ac = _np.correlate(fr, fr, mode="full")[len(fr)-1:]
+                if ac[0] > 0 and ac.max() > 0:
+                    peak = _np.argmax(ac[1:]) + 1
+                    if ac[peak] > 0:
+                        hnr_vals.append(10 * _np.log10(ac[0] / max(ac[0] - ac[peak], 1e-9)))
+            hnr_db = float(_np.median(hnr_vals)) if hnr_vals else 1.0
+        except Exception:
+            hnr_db = 1.0
     features: dict[str, float | str] = {
         "avg_hz": median_f0_hz,
         "median_f0_hz": median_f0_hz,
@@ -2467,6 +2483,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         "voiced_fraction": voiced_fraction,
         **band_info,
         "f0_contour": voiced.tolist() if voiced.size > 4 else [],
+            "hnr_db": hnr_db,
     }
     return features
 
