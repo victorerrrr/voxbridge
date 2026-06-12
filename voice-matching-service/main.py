@@ -2483,8 +2483,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         "voiced_fraction": voiced_fraction,
         **band_info,
         "f0_contour": voiced.tolist() if voiced.size > 4 else [],
-            "hnr_db": 1.0,
-            "hnr_db": hnr_db,
+        "hnr_db": hnr_db,
     }
     return features
 
