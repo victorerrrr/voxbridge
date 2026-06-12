@@ -1842,15 +1842,17 @@ def _finalize_voice_match_results(
     if results:
         raw_ai = results[0].get("_ai_pitch", {})
         ai_pitch_features = raw_ai if isinstance(raw_ai, dict) else {}
-
-    # Relative speaker score normalization
-    spk_scores = [float(r.get("speaker_score", 0)) for r in results]
-    spk_max = max(spk_scores) if spk_scores else 1.0
-    spk_min = min(spk_scores) if spk_scores else 0.0
-    spk_span = max(spk_max - spk_min, 1e-6)
-    for r in results:
-        raw_spk = float(r.get("speaker_score", 0))
-        r["speaker_score"] = round((raw_spk - spk_min) / spk_span * 100.0, 1)
+        # Relative speaker score normalization
+        spk_scores = [float(r.get("speaker_score", 0)) for r in results]
+        spk_max = max(spk_scores) if spk_scores else 1.0
+        spk_min = min(spk_scores) if spk_scores else 0.0
+        spk_span = spk_max - spk_min
+        for r in results:
+            raw_spk = float(r.get("speaker_score", 0))
+            if spk_span < NORMALIZE_MIN_SPAN:
+                r["speaker_score"] = round(raw_spk * 100.0, 1)
+            else:
+                r["speaker_score"] = round(NORMALIZE_TARGET_BOTTOM + (raw_spk - spk_min) / spk_span * (100.0 - NORMALIZE_TARGET_BOTTOM), 1)
     _normalize_similarities_across_demos(results)
     logger.info("After stretch: %s", [(r.get("demo_filename","?"), r.get("similarity")) for r in results])
     for row in results:
