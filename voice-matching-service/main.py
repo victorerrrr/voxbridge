@@ -2458,7 +2458,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         register = "mid"
     else:
         register = "high"
-    band_info = classify_vocal_type(median_f0_hz)
+        band_info = classify_vocal_type(median_f0_hz)
         try:
             import numpy as _np
             frame_len = int(sr * 0.025)
