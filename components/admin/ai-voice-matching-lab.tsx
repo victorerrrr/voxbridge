@@ -262,6 +262,8 @@ export function AiVoiceMatchingLab() {
   const [demos, setDemos] = useState<VocalistDemoItem[]>([]);
   const [results, setResults] = useState<AiVoiceMatchResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [aiLanguage, setAiLanguage] = useState<string>("");
+  const [partLanguage, setPartLanguage] = useState<string>("");
   const [matchError, setMatchError] = useState<string | null>(null);
   const [processedFileCount, setProcessedFileCount] = useState<number | null>(null);
   const [selectedQueryTags, setSelectedQueryTags] = useState<
@@ -515,7 +517,18 @@ export function AiVoiceMatchingLab() {
         )}
       </LabSection>
 
-      {/* Voice Character Tags */}
+      {/* Language Fields */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-white/50 mb-1">Language of AI vocal</label>
+            <select value={aiLanguage} onChange={(e) => setAiLanguage(e.target.value)} className="w-full px-3 py-1.5 rounded text-sm bg-zinc-800 border border-white/10 text-white focus:outline-none focus:border-white/30"><option value="">Any</option><option value="English">English</option><option value="Russian">Russian</option><option value="Spanish">Spanish</option><option value="French">French</option><option value="German">German</option><option value="Italian">Italian</option><option value="Portuguese">Portuguese</option><option value="Chinese">Chinese</option><option value="Japanese">Japanese</option><option value="Korean">Korean</option><option value="Arabic">Arabic</option><option value="Hindi">Hindi</option><option value="Turkish">Turkish</option><option value="Polish">Polish</option><option value="Ukrainian">Ukrainian</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-white/50 mb-1">Language of part</label>
+            <select value={partLanguage} onChange={(e) => setPartLanguage(e.target.value)} className="w-full px-3 py-1.5 rounded text-sm bg-zinc-800 border border-white/10 text-white focus:outline-none focus:border-white/30"><option value="">Any</option><option value="English">English</option><option value="Russian">Russian</option><option value="Spanish">Spanish</option><option value="French">French</option><option value="German">German</option><option value="Italian">Italian</option><option value="Portuguese">Portuguese</option><option value="Chinese">Chinese</option><option value="Japanese">Japanese</option><option value="Korean">Korean</option><option value="Arabic">Arabic</option><option value="Hindi">Hindi</option><option value="Turkish">Turkish</option><option value="Polish">Polish</option><option value="Ukrainian">Ukrainian</option></select>
+          </div>
+        </div>
+        {/* Voice Character Tags */}
       <div className="rounded-lg border border-white/10 bg-white/5 p-6 mb-8">
         <h2 className="text-lg font-semibold text-white mb-1">Voice Character</h2>
         <p className="text-sm text-white/50 mb-4">
@@ -729,7 +742,21 @@ export function AiVoiceMatchingLab() {
                     {row.vocalistName !== row.filename.replace(/\.[^.]+$/, "") && (
                       <p className="mt-0.5 text-vox-meta">{row.vocalistName}</p>
                     )}
-                    {isTopMatch && resolveMatchFeatureTagsForDisplay(row).length > 0 && (
+                                  {(aiLanguage || partLanguage) && (
+                <div className="flex gap-1.5 mt-1 flex-wrap">
+                  {aiLanguage && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 border border-white/10 text-white/50">
+                      AI: {aiLanguage}
+                    </span>
+                  )}
+                  {partLanguage && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-violet-500/10 border border-violet-400/20 text-violet-300">
+                      Needs: {partLanguage}
+                    </span>
+                  )}
+                </div>
+              )}
+              {isTopMatch && resolveMatchFeatureTagsForDisplay(row).length > 0 && (
                       <div className="mt-2 max-w-md space-y-1.5">
                         <p className="text-vox-secondary text-zinc-300">
                           Почему лучший вариант:
