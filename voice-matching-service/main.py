@@ -680,6 +680,15 @@ def classify_vocal_type_multi_feature(
             "high_pitched_male": midi >= VOCAL_CLASSIFY_PITCH_HIGH_MIDI,
             "classification_confidence": 0.68,
         }
+    # HNR + p90 tiebreaker: clean voice with high upper register -> female
+    p90 = float(pitch_features.get("p90_f0_hz", 0))
+    hnr = float(pitch_features.get("hnr_db", 1.0))
+    if hnr > 8.0 and p90 > 196.0:  # p90 > ~G3 (196 Hz) suggests female range
+        return {
+            "detected_vocal_type": "female",
+            "high_pitched_male": False,
+            "classification_confidence": 0.55,
+        }
     return {
         "detected_vocal_type": "male",
         "high_pitched_male": False,
@@ -2420,6 +2429,7 @@ def _collect_voiced_f0_frames(y: np.ndarray, sr: int) -> tuple[np.ndarray, float
 
     if chunk_medians:
         median_hz = float(np.median(chunk_medians))
+        p90_hz = float(np.percentile(chunk_medians, 90))
         return np.array([median_hz], dtype=np.float64), max(
             voiced_fraction, len(chunk_medians) / max(MAX_CHUNKS, 1)
         )
@@ -2450,6 +2460,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         return {**empty, "voiced_fraction": voiced_fraction}
 
     median_f0_hz = float(np.median(voiced))
+    p90_f0_hz = float(np.percentile(voiced, 90))
     min_hz = float(np.min(voiced))
     max_hz = float(np.max(voiced))
     if median_f0_hz < 165.0:
@@ -2477,6 +2488,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
     features: dict[str, float | str] = {
         "avg_hz": median_f0_hz,
         "median_f0_hz": median_f0_hz,
+        "p90_f0_hz": p90_f0_hz,
         "min_hz": min_hz,
         "max_hz": max_hz,
         "register": register,
