@@ -168,7 +168,7 @@ ECAPA_SAMPLE_RATE = 16000
 MAX_AUDIO_SECONDS = 10
 REQUEST_TIMEOUT_SEC = 30
 # Vocal separation on AI reference (slow: model download + CPU). Off for MVP lab stability.
-USE_DEMUCS = False
+USE_DEMUCS = True
 # Rough CPU budget to attempt one Demucs pass on the AI vocal.
 DEMUCS_MIN_REMAINING_SEC = 2.5
 DEMUCS_MODEL_NAME = os.environ.get("DEMUCS_MODEL", "htdemucs")
@@ -178,12 +178,13 @@ MAX_CHUNKS = 5
 # Mono samples in [-1, 1]; segments below this RMS are treated as silent and skipped.
 CHUNK_MIN_RMS = 0.01
 
-# v4 composite weights (v3 was 35/32/28/5; v2 was 35/38/22/5; v1 was 40/30/25/5).
+# v5 composite weights (v4 was 34/28/33/5; v3 was 35/32/28/5).
 V4_WEIGHTS: dict[str, float] = {
-    "speaker": 0.34,
-    "timbre": 0.28,
-    "pitch": 0.33,
+    "speaker": 0.15,
+    "timbre": 0.42,
+    "pitch": 0.30,
     "quality": 0.05,
+    "vocal_character": 0.08,
 }
 # Median F0 (Hz) → range_band for vocal-type mismatch penalties.
 F0_RANGE_LOW_HZ = 165.0
@@ -236,15 +237,15 @@ VOCAL_MISMATCH_HARD_CAP = 75.0
 VOCAL_MISMATCH_ADJACENT_CAP = 82.0
 VOCAL_MISMATCH_PITCH_THRESHOLD = 50.0
 VOCAL_MISMATCH_RANGE_OVERLAP_MAX = 40.0
-MIN_SIMILARITY_FLOOR = 20.0
+MIN_SIMILARITY_FLOOR = 5.0
 # v4.2 — rank-preserving stretch across demos (best → top band, worst → bottom band).
 NORMALIZE_TARGET_TOP = 85.0
-NORMALIZE_TARGET_BOTTOM = 28.0
-NORMALIZE_MIN_SPAN = 25.0
+NORMALIZE_TARGET_BOTTOM = 15.0
+NORMALIZE_MIN_SPAN = 2.0
 NORMALIZE_RAW_FLAT_THRESHOLD = 5.0
 RANK_MIN_GAP = 10.0
 # rank_boost[position]: top +12, 2nd +0, 3rd −5, 4th −8, 5th+ −10
-RANK_BOOST_BY_POSITION = (12.0, 0.0, -5.0, -8.0, -10.0)
+RANK_BOOST_BY_POSITION = (18.0, 0.0, -8.0, -12.0, -15.0)
 MAX_SIMILARITY_CAP = 88.0
 MAX_SIMILARITY_CAP_ALIGNED = 95.0
 MAX_SIMILARITY_CAP_PERFECT = 99.0
@@ -357,7 +358,7 @@ def get_classifier() -> Any:
 
 def get_demucs_model():
     if not USE_DEMUCS:
-        raise RuntimeError("Demucs is disabled (USE_DEMUCS=False)")
+        raise RuntimeError("Demucs is disabled (USE_DEMUCS=True)")
     global _demucs_model
     if _demucs_model is None:
         _clear_proxy_env()
@@ -529,6 +530,17 @@ def _harmonic_low_band_energy_ratio(y: np.ndarray, sr: int) -> float:
     low_energy = float(stft[low_mask].sum())
     total = float(stft.sum()) + 1e-12
     return low_energy / total
+
+
+def _mfcc_cosine_similarity(ai_timbre: dict, demo_timbre: dict) -> float:
+    """MFCC cosine similarity between AI and demo, returns 0-100."""
+    import numpy as np
+    a = np.asarray(ai_timbre.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    b = np.asarray(demo_timbre.get("mean_mfcc", np.zeros(13)), dtype=np.float64)
+    if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
+        return 50.0
+    cos = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    return round((cos + 1) / 2 * 100, 2)
 
 
 def _timbre_mfcc_variance(timbre_features: dict[str, np.ndarray | float]) -> float:
@@ -903,7 +915,7 @@ def _prototype_pitch_timbre_cosine_similarity(
     demo_vec = _male_prototype_unit_vector(
         _pitch_midi_value(demo_pitch),
         np.asarray(demo_timbre.get("mean_mfcc", np.zeros(13)), dtype=np.float64),
-        float(demo_timbre.get("centroid_hz", 0) or 0),
+        float(_mfcc_cosine_similarity(ai_timbre, demo_timbre)),
     )
     proto_vec = _male_prototype_unit_vector(
         float(prototype.get("pitch_avg", 0) or 0),
@@ -917,6 +929,55 @@ def _prototype_pitch_timbre_cosine_similarity(
     return max(0.0, min(1.0, float(np.dot(demo_vec, proto_vec))))
 
 
+
+# ── Demo profile cache ──────────────────────────────────────────────────────
+import hashlib as _hashlib
+_DEMO_PROFILES_DIR = Path(__file__).parent / "demo_profiles"
+
+def _demo_profile_path(demo_path: str):
+    _DEMO_PROFILES_DIR.mkdir(exist_ok=True)
+    stem = Path(demo_path).stem
+    return _DEMO_PROFILES_DIR / f"{stem}.json"
+
+
+def _save_demo_profile(demo_path: str, waveform, embeddings, chunk_rms, pitch, timbre, vocal_character):
+    p = _demo_profile_path(demo_path)
+    emb_list = {str(k): (v.tolist() if hasattr(v, "tolist") else v) for k, v in embeddings.items()}
+    rms_list = {str(k): float(v) for k, v in chunk_rms.items()}
+    vc_serial = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in vocal_character.items()}
+    pitch_serial = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in pitch.items()}
+    timbre_serial = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in timbre.items()}
+    data = {
+        "waveform": waveform.tolist() if hasattr(waveform, "tolist") else list(waveform),
+        "embeddings": emb_list,
+        "chunk_rms": rms_list,
+        "pitch": pitch_serial,
+        "timbre": timbre_serial,
+        "vocal_character": vc_serial,
+    }
+    p.write_text(json.dumps(data))
+
+def _load_demo_profile(demo_path: str):
+    p = _demo_profile_path(demo_path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+        import numpy as np
+        import torch as _torch; waveform = _torch.tensor(data["waveform"], dtype=_torch.float32).unsqueeze(0)
+        import torch; embeddings = {int(k): torch.tensor(v, dtype=torch.float32) for k, v in data["embeddings"].items()}
+        chunk_rms = {int(k): float(v) for k, v in data["chunk_rms"].items()}
+        pitch = {k: (np.array(v, dtype=np.float32) if isinstance(v, list) else v)
+                 for k, v in data["pitch"].items()}
+        timbre = {k: (np.array(v, dtype=np.float32) if isinstance(v, list) else v)
+                  for k, v in data["timbre"].items()}
+        vocal_character = data["vocal_character"]
+        return waveform, embeddings, chunk_rms, pitch, timbre, vocal_character
+    except Exception as e:
+        logger.warning("demo profile load failed for %s: %s", demo_path, e)
+        return None
+
+# ────────────────────────────────────────────────────────────────────────────
 def _load_male_prototype_features(
     temp_dir: str,
     demo_entries: list[tuple[Path, str]],
@@ -929,7 +990,7 @@ def _load_male_prototype_features(
             continue
         demo_wav = load_audio_to_wav(str(demo_path), temp_dir)
         waveform = _waveform_for_embedding(
-            Path(demo_wav), step_ref, budget, run_demucs=False
+            Path(demo_wav), step_ref, budget, run_demucs=USE_DEMUCS
         )
         features = _extract_male_prototype_features(waveform)
         logger.info(
@@ -1318,7 +1379,9 @@ def _compute_final_ranking_score(
         row.get("_query_tags") or {}
     )
     )
-    return tier, _round_score(final)
+    _fb_boost = _feedback_boost(str(row.get(chr(100)+chr(101)+chr(109)+chr(111)+chr(95)+chr(102)+chr(105)+chr(108)+chr(101)+chr(110)+chr(97)+chr(109)+chr(101), chr(0))))
+    row["feedback_boost"] = round(_fb_boost, 1)
+    return tier, _round_score(final + _fb_boost)
 
 
 def _sort_rows_by_final_ranking_score(rows: list[dict]) -> list[dict]:
@@ -1780,10 +1843,19 @@ def _finalize_voice_match_results(
         raw_ai = results[0].get("_ai_pitch", {})
         ai_pitch_features = raw_ai if isinstance(raw_ai, dict) else {}
 
+    # Relative speaker score normalization
+    spk_scores = [float(r.get("speaker_score", 0)) for r in results]
+    spk_max = max(spk_scores) if spk_scores else 1.0
+    spk_min = min(spk_scores) if spk_scores else 0.0
+    spk_span = max(spk_max - spk_min, 1e-6)
+    for r in results:
+        raw_spk = float(r.get("speaker_score", 0))
+        r["speaker_score"] = round((raw_spk - spk_min) / spk_span * 100.0, 1)
     _normalize_similarities_across_demos(results)
+    logger.info("After stretch: %s", [(r.get("demo_filename","?"), r.get("similarity")) for r in results])
     for row in results:
         vocal_types_align = bool(row.pop("_vocal_types_align", True))
-        ai_pitch = row.pop("_ai_pitch", {})
+        ai_pitch = row.get("_ai_pitch", {})
         demo_pitch = row.pop("_demo_pitch", {})
         ai_pitch_dict = ai_pitch if isinstance(ai_pitch, dict) else {}
         demo_pitch_dict = demo_pitch if isinstance(demo_pitch, dict) else {}
@@ -2052,6 +2124,9 @@ def _to_mono_16k(waveform: Any, sample_rate: int) -> Any:
 
 
 def _demucs_vocals_stem(waveform: Any, sample_rate: int) -> Any:
+    max_samples = int(7.8 * sample_rate)
+    if waveform.shape[-1] > max_samples:
+        waveform = waveform[..., :max_samples]
     _load_ml_stack()
     model = get_demucs_model()
     demucs_sr = model.samplerate
@@ -2389,6 +2464,7 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
         "register": register,
         "voiced_fraction": voiced_fraction,
         **band_info,
+        "f0_contour": voiced.tolist() if voiced.size > 4 else [],
     }
     return features
 
@@ -2622,12 +2698,12 @@ def compute_vocal_character_features(
             pitch_stability = float(
                 1.0 / (np.std(f0_voiced) / (np.mean(f0_voiced) + 1e-9) + 1e-9)
             )
-            pitch_stability = min(pitch_stability / 10.0, 1.0)
+            pitch_stability = min(pitch_stability / 5.0, 2.0)
 
         rms = float(np.mean(librosa.feature.rms(y=y)))
         centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
         vocal_weight = float(
-            min(rms * 100 + (1.0 - min(centroid / 4000, 1.0)) * 0.5, 1.0)
+            max(0.0, rms * 100 + (1.0 - min(centroid / 4000, 1.0)) * 0.5)
         )
 
         onsets = librosa.onset.onset_detect(y=y, sr=sr, units="time")
@@ -2712,10 +2788,48 @@ def pitch_similarity(ai: dict[str, float | str], demo: dict[str, float | str]) -
         str(demo.get("register", "unknown")),
         low_voiced=low_voiced,
     )
+    dtw_score = _f0_dtw_similarity(ai, demo)
+    hnr_score = _hnr_register_similarity(ai, demo)
     blended = _round_score(
-        0.45 * avg_score + 0.35 * range_score + 0.20 * register_score
+        0.35 * avg_score + 0.25 * range_score + 0.10 * register_score + 0.25 * dtw_score + 0.05 * hnr_score
     )
     return _round_score(max(PITCH_SCORE_FLOOR, blended))
+
+
+def _hnr_register_similarity(ai_pitch: dict, demo_pitch: dict) -> float:
+    try:
+        ai_hnr = float(ai_pitch.get("hnr_db", 1.0))
+        demo_hnr = float(demo_pitch.get("hnr_db", 1.0))
+        ai_db = 10.0 * np.log10(max(ai_hnr, 1e-9))
+        demo_db = 10.0 * np.log10(max(demo_hnr, 1e-9))
+        diff = abs(ai_db - demo_db)
+        return _round_score(max(0.0, 100.0 - diff * 3.0))
+    except Exception:
+        return 50.0
+
+
+def _f0_dtw_similarity(ai_pitch: dict, demo_pitch: dict) -> float:
+    try:
+        import numpy as np
+        a = np.array(ai_pitch.get("f0_contour", []), dtype=np.float64)
+        b = np.array(demo_pitch.get("f0_contour", []), dtype=np.float64)
+        if a.size < 4 or b.size < 4:
+            return 50.0
+        a = 12.0 * np.log2(a / (np.median(a) + 1e-9) + 1e-9)
+        b = 12.0 * np.log2(b / (np.median(b) + 1e-9) + 1e-9)
+        a = np.interp(np.linspace(0,1,100), np.linspace(0,1,a.size), a)
+        b = np.interp(npe(0,1,100), np.linspace(0,1,b.size), b)
+        n, m = len(a), len(b)
+        dtw = np.full((n+1,m+1), np.inf)
+        dtw[0,0] = 0.0
+        for i in range(1,n+1):
+            for j in range(1,m+1):
+                cost = abs(a[i-1]-b[j-1])
+                dtw[i,j] = cost + min(dtw[i-1,j], dtw[i,j-1], dtw[i-1,j-1])
+        dist = dtw[n,m] / max(n,m)
+        return _round_score(max(0.0, 100.0 - dist * 8.0))
+    except Exception:
+        return 50.0
 
 
 def _spectral_proximity_score(a_hz: float, b_hz: float, scale_hz: float) -> float:
@@ -2782,19 +2896,57 @@ def demo_quality_score(demo_quality: float, ai_quality: float) -> float:
     return _round_score(demo_quality)
 
 
+def _vocal_character_similarity(
+    ai_vc: dict,
+    demo_vc: dict,
+) -> float:
+    """Compare vocal character features, return 0-100 similarity score."""
+    keys = ["breathiness", "vibrato_rate", "vibrato_depth", "vocal_weight",
+            "pitch_stability", "articulation_speed", "dynamic_range"]
+    diffs = []
+    for k in keys:
+        a = ai_vc.get(k, 0.0); d = demo_vc.get(k, 0.0) if demo_vc else 0.0
+        if a == 0.0 and d == 0.0:
+            continue
+        max_val = max(abs(a), abs(d), 1e-6)
+        diffs.append(abs(a - d) / max_val)
+    if not diffs:
+        return 50.0
+    avg_diff = sum(diffs) / len(diffs)
+    return round(max(0.0, (1.0 - avg_diff) * 100.0), 1)
+
+
+def _genre_weights(query_tags: dict) -> dict:
+    w = dict(V4_WEIGHTS)
+    if not query_tags:
+        return w
+    genre = str(query_tags.get(chr(103)+chr(101)+chr(110)+chr(114)+chr(101), chr(0))).lower()
+    if genre in (chr(111)+chr(112)+chr(101)+chr(114)+chr(97), chr(99)+chr(108)+chr(97)+chr(115)+chr(115)+chr(105)+chr(99)+chr(97)+chr(108)):
+        w.update({chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.38, chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.34, chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.12, chr(113)+chr(117)+chr(97)+chr(108)+chr(105)+chr(116)+chr(121): 0.08})
+    elif genre in (chr(114)+chr(110)+chr(98), chr(115)+chr(111)+chr(117)+chr(108)):
+        w.update({chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.45, chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.25, chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.15})
+    elif genre in (chr(114)+chr(97)+chr(112), chr(104)+chr(105)+chr(112)+chr(45)+chr(104)+chr(111)+chr(112)):
+        w.update({chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.30, chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.35, chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.18})
+    total = sum(w.values())
+    return {k: v / total for k, v in w.items()}
+
+
 def combine_scores(
     speaker: float,
     timbre: float,
     pitch: float,
     quality: float,
+    vocal_character: float = 50.0,
+    query_tags: dict = None,
 ) -> float:
     """Weighted final similarity (0–100) using V4_WEIGHTS."""
-    w = V4_WEIGHTS
+    w = _genre_weights(query_tags)
     return _round_score(
         w["speaker"] * speaker
         + w["timbre"] * timbre
         + w["pitch"] * pitch
         + w["quality"] * quality
+        + w.get("vocal_character", 0.0) * vocal_character
     )
 
 
@@ -3154,6 +3306,7 @@ def _run_voice_match(
     demo_entries: list[tuple[Path, str]],
     progress: VoiceMatchProgress | None = None,
     query_tags: dict | None = None,
+    gender_override: str | None = None,
 ) -> list[dict] | dict[str, Any] | JSONResponse:
     budget = RequestBudget()
     step_ref: list[str] = ["loading"]
@@ -3184,7 +3337,10 @@ def _run_voice_match(
         _apply_ai_reference_vocal_type_adjustment(
             ai_pitch, filename=ai_reference_filename
         )
+        if gender_override and gender_override in ("male", "female"):
+            ai_pitch["detected_vocal_type"] = gender_override
         ai_quality = quality_score(ai_waveform)
+        ai_vocal_character = compute_vocal_character_features(ai_waveform)
         logger.info(
             "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f",
             ai_reference_filename,
@@ -3212,41 +3368,62 @@ def _run_voice_match(
             break
 
         try:
-            step_ref[0] = "loading"
-            demo_wav = load_audio_to_wav(str(demo_path), temp_dir)
-
-            step_ref[0] = "embedding"
-            demo_waveform, demo_embeddings, demo_chunk_rms = _extract_chunk_embeddings(
-                classifier,
-                Path(demo_wav),
-                step_ref,
-                budget,
-                run_demucs=False,
-            )
-
-            step_ref[0] = "similarity"
-            speaker_score, chunks_used = average_chunk_similarity(
-                ai_embeddings,
-                demo_embeddings,
-                ai_chunk_rms,
-                demo_chunk_rms,
-            )
-            if chunks_used < 2:
-                speaker_score = _round_score(
-                    speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
+            _cached = _load_demo_profile(demo_filename)
+            if _cached is not None:
+                demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character = _cached
+                step_ref[0] = "similarity"
+                speaker_score, chunks_used = average_chunk_similarity(
+                    ai_embeddings,
+                    demo_embeddings,
+                    ai_chunk_rms,
+                    demo_chunk_rms,
                 )
-            logger.info(
-                "Using chunk averaging (%d chunks) for %s",
-                chunks_used,
-                demo_filename,
-            )
+                if chunks_used < 2:
+                    speaker_score = _round_score(
+                        speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
+                    )
+                logger.info(
+                    "[cache hit] Using chunk averaging (%d chunks) for %s",
+                    chunks_used,
+                    demo_filename,
+                )
+            else:
+                step_ref[0] = "loading"
+                demo_wav = load_audio_to_wav(str(demo_path), temp_dir)
 
-            step_ref[0] = "features"
-            demo_pitch = compute_pitch_features(demo_waveform)
-            demo_timbre = compute_timbre_features(demo_waveform)
-            demo_vocal_character = compute_vocal_character_features(
-                demo_waveform, ECAPA_SAMPLE_RATE
-            )
+                step_ref[0] = "embedding"
+                demo_waveform, demo_embeddings, demo_chunk_rms = _extract_chunk_embeddings(
+                    classifier,
+                    Path(demo_wav),
+                    step_ref,
+                    budget,
+                    run_demucs=USE_DEMUCS,
+                )
+
+                step_ref[0] = "similarity"
+                speaker_score, chunks_used = average_chunk_similarity(
+                    ai_embeddings,
+                    demo_embeddings,
+                    ai_chunk_rms,
+                    demo_chunk_rms,
+                )
+                if chunks_used < 2:
+                    speaker_score = _round_score(
+                        speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
+                    )
+                logger.info(
+                    "Using chunk averaging (%d chunks) for %s",
+                    chunks_used,
+                    demo_filename,
+                )
+
+                step_ref[0] = "features"
+                demo_pitch = compute_pitch_features(demo_waveform)
+                demo_timbre = compute_timbre_features(demo_waveform)
+                demo_vocal_character = compute_vocal_character_features(
+                    demo_waveform, ECAPA_SAMPLE_RATE
+                )
+                _save_demo_profile(demo_filename, demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character)
             timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             _apply_multi_feature_vocal_classification(
                 demo_pitch,
@@ -3280,7 +3457,9 @@ def _run_voice_match(
             demo_quality_raw = quality_score(demo_waveform)
             pitch_sc = pitch_similarity(ai_pitch, demo_pitch)
             quality_sc = demo_quality_score(demo_quality_raw, ai_quality)
-            similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc)
+            vc_sc = _vocal_character_similarity(ai_vocal_character, demo_vocal_character)
+            logger.info("VC features ai=%s demo=%s vc_sc=%.1f", ai_vocal_character, demo_vocal_character, vc_sc)
+            similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc, vc_sc, query_tags=None)
             reasons = _reasons_from_breakdown(
                 speaker_score,
                 timbre_sc,
@@ -3305,13 +3484,14 @@ def _run_voice_match(
                 reasons,
             )
             logger.info(
-                "%s scores: final=%.1f speaker=%.1f timbre=%.1f pitch=%.1f quality=%.1f",
+                "%s scores: final=%.1f speaker=%.1f timbre=%.1f pitch=%.1f quality=%.1f vc=%.1f",
                 demo_filename,
                 similarity,
                 speaker_score,
                 timbre_sc,
                 pitch_sc,
                 quality_sc,
+                vc_sc,
             )
             results.append(
                 {
@@ -3323,6 +3503,7 @@ def _run_voice_match(
                     "timbre_score": timbre_sc,
                     "pitch_score": pitch_sc,
                     "quality_score": quality_sc,
+                "vocal_character_score": vc_sc,
                     "reasons": reasons,
                     "detected_vocal_type": demo_row["detected_vocal_type"],
                     "classification_confidence": demo_row.get(
@@ -3346,7 +3527,7 @@ def _run_voice_match(
                     "_ai_pitch": ai_pitch,
                     "_demo_pitch": demo_pitch,
                     "_spectral_centroid_proxy": float(
-                        demo_timbre.get("centroid_hz", 0) or 0
+                        _mfcc_cosine_similarity(ai_timbre, demo_timbre)
                     ),
                 }
             )
@@ -3371,8 +3552,14 @@ def _run_voice_match(
             "no_valid_demos",
         )
 
-    _sync_progress(progress, results, partial)
-    return _finalize_voice_match_results(results, partial=partial, query_tags=query_tags)
+    if gender_override and gender_override in ("male", "female"):
+        results = [
+            row for row in results
+            if row.get("final_vocal_type") == gender_override
+        ]
+    finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags)
+    _sync_progress(progress, finalized["results"], partial)
+    return finalized
 
 
 @app.post("/voice-match")
@@ -3381,6 +3568,7 @@ async def voice_match(
     demos: Annotated[list[UploadFile], File()],
     demo_display_names: Annotated[str | None, Form()] = None,
     query_tags: Annotated[str | None, Form()] = None,
+    gender_override: Annotated[str | None, Form()] = None,
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3448,7 +3636,7 @@ async def voice_match(
 
         outcome = await asyncio.wait_for(
             asyncio.to_thread(
-                _run_voice_match, temp_dir, ai_path, demo_entries, progress, parsed_query_tags
+                _run_voice_match, temp_dir, ai_path, demo_entries, progress, parsed_query_tags, gender_override
             ),
             timeout=REQUEST_TIMEOUT_SEC,
         )
@@ -4175,6 +4363,78 @@ def _sanity_check_real_voice_1_force_demotion() -> None:
     )
     print("  real_voice_1 force demotion assertions: OK")
 
+
+import json as _json
+import os as _os
+_FEEDBACK_PATH = _os.path.join(_os.path.dirname(__file__), chr(102)+chr(101)+chr(101)+chr(100)+chr(98)+chr(97)+chr(99)+chr(107)+chr(46)+chr(106)+chr(115)+chr(111)+chr(110))
+
+def _load_feedback() -> dict:
+    try:
+        return _json.loads(open(_FEEDBACK_PATH).read())
+    except Exception:
+        return {}
+
+def _save_feedback(data: dict) -> None:
+    open(_FEEDBACK_PATH, chr(119)).write(_json.dumps(data, indent=2))
+
+def _feedback_boost(demo_filename: str) -> float:
+    fb = _load_feedback()
+    entry = fb.get(demo_filename, {})
+    good = int(entry.get(chr(103)+chr(111)+chr(111)+chr(100), 0))
+    bad = int(entry.get(chr(98)+chr(97)+chr(100), 0))
+    return max(-15.0, min(15.0, (good - bad) * 3.0))
+
+
+@app.post("/feedback")
+async def submit_feedback(payload: dict):
+    demo_filename = str(payload.get("demo_filename", ""))
+    rating = str(payload.get("rating", ""))
+    if not demo_filename or rating not in ("good", "bad"):
+        return {"error": "invalid"}
+    fb = _load_feedback()
+    entry = fb.setdefault(demo_filename, {"good": 0, "bad": 0})
+    entry[rating] = entry.get(rating, 0) + 1
+    _save_feedback(fb)
+    return {"status": "ok", "entry": entry}
+
+
+@app.post("/voice-match-batch")
+async def voice_match_batch(
+    ai_vocals: Annotated[list[UploadFile], File()],
+    demos: Annotated[list[UploadFile], File()],
+    query_tags: Annotated[str | None, Form()] = None,
+    gender_override: Annotated[str | None, Form()] = None,
+):
+    import tempfile, shutil
+    results = []
+    temp_dir = tempfile.mkdtemp()
+    try:
+        demo_entries = []
+        for d in demos:
+            demo_path = Path(temp_dir) / (d.filename or "demo.wav")
+            demo_path.write_bytes(await d.read())
+            demo_entries.append((demo_path, d.filename or "demo.wav"))
+        parsed_query_tags = {}
+        if query_tags:
+            try: parsed_query_tags = json.loads(query_tags)
+            except Exception: pass
+        for ai_file in ai_vocals:
+            ai_path = Path(temp_dir) / (ai_file.filename or "ai.wav")
+            ai_path.write_bytes(await ai_file.read())
+            match_results = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda p=ai_path: _run_voice_match(
+                    temp_dir=str(temp_dir),
+                    ai_path=p,
+                    demo_entries=demo_entries,
+                    query_tags=parsed_query_tags,
+                    gender_override=gender_override,
+                )
+            )
+            results.append({"ai_filename": ai_file.filename, "matches": match_results})
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    return {"results": results}
 
 if __name__ == "__main__":
     if os.environ.get("VOICE_MATCH_SCORING_SANITY") == "1":

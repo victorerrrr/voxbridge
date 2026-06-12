@@ -838,6 +838,8 @@ export function AiVoiceMatchingLab() {
                             `timb ${row.breakdown.timbreScore}`,
                           row.breakdown.qualityScore != null &&
                             `q ${row.breakdown.qualityScore}`,
+                        row.feedback_boost != null && row.feedback_boost !== 0 &&
+                          `fb ${row.feedback_boost > 0 ? "+" : ""}${row.feedback_boost}`,
                         ]
                           .filter(Boolean)
                           .join(" · ")}

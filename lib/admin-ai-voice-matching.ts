@@ -1667,6 +1667,8 @@ export type VoiceMatchApiRow = {
   timbre_score?: number;
   pitch_score?: number;
   quality_score?: number;
+  vocal_character_score?: number;
+  feedback_boost?: number;
   reasons: string[];
   feature_tags?: string[];
 };
@@ -1843,6 +1845,7 @@ function mapScoreBreakdown(row: VoiceMatchApiRow): VoiceMatchScoreBreakdown {
     timbreScore: finiteScore(row.timbre_score),
     pitchScore: finiteScore(row.pitch_score),
     qualityScore: finiteScore(row.quality_score),
+      vocalCharacterScore: finiteScore(row.vocal_character_score),
   };
 }
 
@@ -1869,7 +1872,8 @@ function logFormDataPayload(
 export function buildVoiceMatchFormData(
   aiVocalFile: File,
   demos: VocalistDemoItem[],
-  queryTags?: Record<string, string[]>
+  queryTags?: Record<string, string[]>,
+  genderOverride?: string
 ): { formData: FormData; demoInputs: VoiceMatchDemoInput[] } {
   if (!aiVocalFile.size) {
     throw new Error("AI vocal file is empty.");
@@ -1905,6 +1909,9 @@ export function buildVoiceMatchFormData(
 
   if (queryTags && Object.keys(queryTags).length > 0) {
     formData.append("query_tags", JSON.stringify(queryTags));
+  }
+  if (genderOverride && genderOverride !== "auto") {
+    formData.append("gender_override", genderOverride);
   }
   return { formData, demoInputs };
 }
@@ -2108,9 +2115,11 @@ export function mapVoiceMatchResultsFromApi(
 /** POST AI vocal + demos to the voice-matching service. */
 export async function runVoiceMatching(
   aiVocalFile: File,
-  demos: VocalistDemoItem[]
+  demos: VocalistDemoItem[],
+  selectedQueryTags: string[] = [],
+  genderOverride: string = "auto"
 ): Promise<AiVoiceMatchResult[]> {
-  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos);
+  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos, selectedQueryTags, genderOverride);
   logFormDataPayload(aiVocalFile, demoInputs);
   console.log("sending voice-match request");
   console.log("[voice-match] POST", VOICE_MATCH_REQUEST_URL);
