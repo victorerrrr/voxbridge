@@ -1,0 +1,65 @@
+INFO:     Started server process [61410]
+INFO:     Waiting for application startup.
+INFO speechbrain.utils.quirks: Applied quirks (see `speechbrain.utils.quirks`): [allow_tf32, disable_jit_profiling]
+INFO speechbrain.utils.quirks: Excluded quirks specified by the `SB_DISABLE_QUIRKS` environment (comma-separated list): []
+INFO main: Loading SpeechBrain model: speechbrain/spkrec-ecapa-voxceleb
+INFO speechbrain.utils.fetching: Fetch hyperparams.yaml: Using file found at '/Users/galina/Desktop/Voxbridge/voice-matching-service/pretrained_models/spkrec-ecapa-voxceleb/hyperparams.yaml'
+INFO speechbrain.utils.fetching: Fetch embedding_model.ckpt: Using file found at '/Users/galina/Desktop/Voxbridge/voice-matching-service/pretrained_models/spkrec-ecapa-voxceleb/embedding_model.ckpt'
+INFO speechbrain.utils.fetching: Fetch mean_var_norm_emb.ckpt: Using file found at '/Users/galina/Desktop/Voxbridge/voice-matching-service/pretrained_models/spkrec-ecapa-voxceleb/mean_var_norm_emb.ckpt'
+INFO speechbrain.utils.fetching: Fetch classifier.ckpt: Using file found at '/Users/galina/Desktop/Voxbridge/voice-matching-service/pretrained_models/spkrec-ecapa-voxceleb/classifier.ckpt'
+INFO speechbrain.utils.fetching: Fetch label_encoder.txt: Using file found at '/Users/galina/Desktop/Voxbridge/voice-matching-service/pretrained_models/spkrec-ecapa-voxceleb/label_encoder.ckpt'
+INFO speechbrain.utils.parameter_transfer: Loading pretrained files for: embedding_model, mean_var_norm_emb, classifier, label_encoder
+INFO main: Voice matching model ready (Demucs enabled).
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO main: request received
+INFO main: ai_vocal filename: Оля, проми.wav
+INFO main: demos count: 5
+INFO main: demo display names: Real vocal 1.wav, Real vocal 5.wav, Real vocal 4.wav, Real vocal 2.wav, Real vocal 3.wav
+INFO main: demo upload filenames: Real vocal 1.wav, Real vocal 5.wav, Real vocal 4.wav, Real vocal 2.wav, Real vocal 3.wav
+INFO main: Audio trimmed to 10 seconds
+INFO main: embedding start for Оля, проми_decoded.wav
+INFO main: demucs start for Оля, проми_decoded.wav
+INFO main: Loading Demucs model: htdemucs
+INFO main: demucs done for Оля, проми_decoded.wav
+INFO main: embedding done for Оля, проми_decoded.wav (4 chunk(s))
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.k2_integration' was deprecated, redirecting to 'speechbrain.integrations.k2_fsa'. Please update your script.
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.pretrained' was deprecated, redirecting to 'speechbrain.inference'. Please update your script. This is a change from SpeechBrain 1.0. See: https://github.com/speechbrain/speechbrain/releases/tag/v1.0.0
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.wordemb' was deprecated, redirecting to 'speechbrain.integrations.huggingface.wordemb'. Please update your script.
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.lobes.models.huggingface_transformers' was deprecated, redirecting to 'speechbrain.integrations.huggingface'. Please update your script.
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.lobes.models.spacy' was deprecated, redirecting to 'speechbrain.integrations.nlp'. Please update your script.
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.lobes.models.flair' was deprecated, redirecting to 'speechbrain.integrations.nlp'. Please update your script.
+  if ismodule(module) and hasattr(module, '__file__'):
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/inspect.py:988: UserWarning: Module 'speechbrain.nnet.loss.transducer_loss' was deprecated, redirecting to 'speechbrain.integrations.numba.transducer_loss'. Please update your script. This module depends on the optional 'numba' package. If you encounter an ImportError here, please install numba, for example with: pip install numba
+  if ismodule(module) and hasattr(module, '__file__'):
+INFO main: AI vocal features: file=Оля, проми.wav median_f0=232.4Hz pitch_avg=57.9 type=female ai_type=female quality=46.1 hnr=1.00 p90=311.2
+INFO main: [cache hit] Using chunk averaging (4 chunks) for Real vocal 1.wav
+INFO main: Manual demo gender override: Real vocal 1.wav -> male (detected=female)
+INFO main: VC features ai={'breathiness': 0.185, 'vibrato_rate': 4.56, 'vibrato_depth': 0.111, 'vocal_weight': 4.939, 'melodic_range_semitones': 7.5, 'pitch_stability': 1.996, 'articulation_speed': 5.6, 'dynamic_range': 0.931} demo={'breathiness': 0.24, 'vibrato_rate': 5.21, 'vibrato_depth': 0.084, 'vocal_weight': 15.62, 'melodic_range_semitones': 8.1, 'pitch_stability': 0.983, 'articulation_speed': 3.2, 'dynamic_range': 0.399} vc_sc=60.2
+INFO main: Real vocal 1.wav scores: final=31.1 speaker=14.9 timbre=89.1 pitch=58.9 quality=58.4 vc=60.2
+INFO main: [cache hit] Using chunk averaging (4 chunks) for Real vocal 5.wav
+INFO main: Manual demo gender override: Real vocal 5.wav -> female (detected=female)
+INFO main: VC features ai={'breathiness': 0.185, 'vibrato_rate': 4.56, 'vibrato_depth': 0.111, 'vocal_weight': 4.939, 'melodic_range_semitones': 7.5, 'pitch_stability': 1.996, 'articulation_speed': 5.6, 'dynamic_range': 0.931} demo={'breathiness': 0.509, 'vibrato_rate': 4.53, 'vibrato_depth': 0.167, 'vocal_weight': 9.625, 'melodic_range_semitones': 1.5, 'pitch_stability': 2.0, 'articulation_speed': 7.0, 'dynamic_range': 0.484} vc_sc=69.3
+INFO main: Real vocal 5.wav scores: final=64.1 speaker=12.2 timbre=86.8 pitch=58.8 quality=53.0 vc=69.3
+INFO main: [cache hit] Using chunk averaging (4 chunks) for Real vocal 4.wav
+INFO main: Manual demo gender override: Real vocal 4.wav -> female (detected=female)
+INFO main: VC features ai={'breathiness': 0.185, 'vibrato_rate': 4.56, 'vibrato_depth': 0.111, 'vocal_weight': 4.939, 'melodic_range_semitones': 7.5, 'pitch_stability': 1.996, 'articulation_speed': 5.6, 'dynamic_range': 0.931} demo={'breathiness': 0.381, 'vibrato_rate': 7.48, 'vibrato_depth': 0.126, 'vocal_weight': 15.985, 'melodic_range_semitones': 3.3, 'pitch_stability': 2.0, 'articulation_speed': 6.2, 'dynamic_range': 0.445} vc_sc=66.6
+INFO main: Real vocal 4.wav scores: final=63.3 speaker=16.7 timbre=87.0 pitch=53.2 quality=59.7 vc=66.6
+INFO main: [cache hit] Using chunk averaging (4 chunks) for Real vocal 2.wav
+INFO main: Manual demo gender override: Real vocal 2.wav -> female (detected=male)
+INFO main: VC features ai={'breathiness': 0.185, 'vibrato_rate': 4.56, 'vibrato_depth': 0.111, 'vocal_weight': 4.939, 'melodic_range_semitones': 7.5, 'pitch_stability': 1.996, 'articulation_speed': 5.6, 'dynamic_range': 0.931} demo={'breathiness': 0.13, 'vibrato_rate': 5.14, 'vibrato_depth': 0.128, 'vocal_weight': 22.469, 'melodic_range_semitones': 7.0, 'pitch_stability': 1.368, 'articulation_speed': 9.2, 'dynamic_range': 0.498} vc_sc=64.4
+INFO main: Real vocal 2.wav scores: final=73.1 speaker=6.3 timbre=92.2 pitch=83.1 quality=67.8 vc=64.4
+INFO main: [cache hit] Using chunk averaging (4 chunks) for Real vocal 3.wav
+INFO main: Manual demo gender override: Real vocal 3.wav -> male (detected=male)
+INFO main: VC features ai={'breathiness': 0.185, 'vibrato_rate': 4.56, 'vibrato_depth': 0.111, 'vocal_weight': 4.939, 'melodic_range_semitones': 7.5, 'pitch_stability': 1.996, 'articulation_speed': 5.6, 'dynamic_range': 0.931} demo={'breathiness': 0.259, 'vibrato_rate': 5.17, 'vibrato_depth': 0.1, 'vocal_weight': 8.971, 'melodic_range_semitones': 21.1, 'pitch_stability': 0.64, 'articulation_speed': 2.4, 'dynamic_range': 0.755} vc_sc=65.8
+INFO main: Real vocal 3.wav scores: final=34.6 speaker=6.3 timbre=94.1 pitch=70.1 quality=85.3 vc=65.8
+INFO main: Score v4.2 stretch across 5 demos (raw 31.1–73.1)
+INFO main: After stretch: [('?', 15.0), ('?', 70.0), ('?', 68.7), ('?', 85.0), ('?', 20.8)]
+INFO main: voice-match complete: 5 result(s)
+INFO main: processing elapsed 3.3s
+INFO:     127.0.0.1:56110 - "POST /voice-match HTTP/1.1" 200 OK

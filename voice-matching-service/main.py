@@ -661,6 +661,15 @@ def classify_vocal_type_multi_feature(
                 "high_pitched_male": True,
                 "classification_confidence": 0.78,
             }
+        # HNR + p90 tiebreaker in pitch_high uncertain zone
+        p90 = float(pitch_features.get("p90_f0_hz", 0))
+        hnr = float(pitch_features.get("hnr_db", 1.0))
+        if p90 > 220.0:
+            return {
+                "detected_vocal_type": "female",
+                "high_pitched_male": False,
+                "classification_confidence": 0.60,
+            }
         return {
             "detected_vocal_type": "unknown",
             "high_pitched_male": False,
@@ -683,7 +692,7 @@ def classify_vocal_type_multi_feature(
     # HNR + p90 tiebreaker: clean voice with high upper register -> female
     p90 = float(pitch_features.get("p90_f0_hz", 0))
     hnr = float(pitch_features.get("hnr_db", 1.0))
-    if hnr > 8.0 and p90 > 196.0:  # p90 > ~G3 (196 Hz) suggests female range
+    if p90 > 220.0:  # p90 > ~A3 (220 Hz) suggests female range
         return {
             "detected_vocal_type": "female",
             "high_pitched_male": False,
@@ -1846,6 +1855,7 @@ def _finalize_voice_match_results(
     results: list[dict],
     partial: bool,
     query_tags: dict = None,
+    gender_override: str | None = None,
 ) -> dict[str, Any]:
     ai_pitch_features: dict[str, float | str] = {}
     if results:
@@ -2455,6 +2465,8 @@ def compute_pitch_features(waveform: Any, sr: int = ECAPA_SAMPLE_RATE) -> dict[s
     if y.size == 0:
         return empty
 
+    band_info = {}
+    hnr_db = 1.0
     voiced, voiced_fraction = _collect_voiced_f0_frames(y, sr)
     if voiced.size == 0:
         return {**empty, "voiced_fraction": voiced_fraction}
@@ -3373,13 +3385,15 @@ def _run_voice_match(
         ai_quality = quality_score(ai_waveform)
         ai_vocal_character = compute_vocal_character_features(ai_waveform)
         logger.info(
-            "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f",
+            "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f hnr=%.2f p90=%.1f",
             ai_reference_filename,
             float(ai_pitch.get("avg_hz", 0) or 0),
             _pitch_midi_value(ai_pitch),
             ai_pitch.get("detected_vocal_type"),
             _ai_vocal_type(ai_pitch),
             ai_quality,
+            float(ai_pitch.get("hnr_db", 1.0)),
+            float(ai_pitch.get("p90_f0_hz", 0)),
         )
     except ValueError as exc:
         return _json_error(400, str(exc), str(exc), step_ref[0])
@@ -3588,7 +3602,7 @@ def _run_voice_match(
             row for row in results
             if row.get("final_vocal_type") == gender_override
         ]
-    finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags)
+    finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override)
     _sync_progress(progress, finalized["results"], partial)
     return finalized
 
