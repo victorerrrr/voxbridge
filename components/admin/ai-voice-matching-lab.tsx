@@ -814,7 +814,7 @@ export function AiVoiceMatchingLab() {
                   pitch: row.pitch_score ?? 0,
                   quality: row.quality_score ?? 0,
                   vocal_character: row.vocal_character_score ?? 0,
-                  speaker: row.speaker_score ?? 0,
+                  speaker: Math.min(100, ((row.speaker_score ?? 0) / 20) * 100),
                 }}
                 size={120}
               />
