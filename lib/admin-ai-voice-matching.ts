@@ -135,14 +135,14 @@ export const MATCH_SECTION_STRONG_THRESHOLD = 60;
 
 /** Per-dimension thresholds for lab comparison bullets (display only). */
 export const MATCH_COMPARISON_CLOSE = {
-  speaker: 70,
+  speaker: 12,
   timbre: 70,
   pitch: 70,
   quality: 65,
 } as const;
 
 export const MATCH_COMPARISON_PARTIAL = {
-  speaker: 50,
+  speaker: 8,
   timbre: 50,
   pitch: 50,
   quality: 50,
