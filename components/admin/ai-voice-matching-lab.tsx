@@ -808,16 +808,14 @@ export function AiVoiceMatchingLab() {
                     </p>
                     <div className="mt-0.5">
                       <VocalTypeDisplay row={row} />
-              <VoiceRadarChart
-                data={{
-                  timbre: row.breakdown?.timbreScore ?? 0,
-                  pitch: row.breakdown?.pitchScore ?? 0,
-                  quality: row.breakdown?.qualityScore ?? 0,
-                  vocal_character: row.breakdown?.vocalCharacterScore ?? 0,
-                  speaker: Math.min(100, ((row.breakdown?.speakerScore ?? 0) / 20) * 100),
-                }}
-                size={180}
-              />
+                <VoiceRadarChart
+                  timbreScore={row.breakdown?.timbreScore ?? 0}
+                  pitchScore={row.breakdown?.pitchScore ?? 0}
+                  qualityScore={row.breakdown?.qualityScore ?? 0}
+                  vocalCharacterScore={row.breakdown?.vocalCharacterScore ?? 0}
+                  speakerScore={Math.min(100, ((row.breakdown?.speakerScore ?? 0) / 20) * 100)}
+                  size={180}
+                />
                       {IS_DEV && (
                         <p className="text-[10px] tabular-nums text-zinc-600">
                           isTopMatch: {row.isTopMatch === true ? "true" : "false"}
