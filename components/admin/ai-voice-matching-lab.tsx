@@ -810,13 +810,13 @@ export function AiVoiceMatchingLab() {
                       <VocalTypeDisplay row={row} />
               <VoiceRadarChart
                 data={{
-                  timbre: row.timbre_score ?? 0,
-                  pitch: row.pitch_score ?? 0,
-                  quality: row.quality_score ?? 0,
-                  vocal_character: row.vocal_character_score ?? 0,
-                  speaker: Math.min(100, ((row.speaker_score ?? 0) / 20) * 100),
+                  timbre: row.breakdown?.timbreScore ?? 0,
+                  pitch: row.breakdown?.pitchScore ?? 0,
+                  quality: row.breakdown?.qualityScore ?? 0,
+                  vocal_character: row.breakdown?.vocalCharacterScore ?? 0,
+                  speaker: Math.min(100, ((row.breakdown?.speakerScore ?? 0) / 20) * 100),
                 }}
-                size={120}
+                size={180}
               />
                       {IS_DEV && (
                         <p className="text-[10px] tabular-nums text-zinc-600">
