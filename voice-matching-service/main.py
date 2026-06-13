@@ -243,6 +243,7 @@ NORMALIZE_TARGET_TOP = 85.0
 NORMALIZE_TARGET_BOTTOM = 15.0
 NORMALIZE_MIN_SPAN = 2.0
 NORMALIZE_RAW_FLAT_THRESHOLD = 5.0
+SPK_RELATIVE_NORM_MIN_MAX = 25.0  # skip relative stretch if all raw spk scores below this
 RANK_MIN_GAP = 10.0
 # rank_boost[position]: top +12, 2nd +0, 3rd −5, 4th −8, 5th+ −10
 RANK_BOOST_BY_POSITION = (18.0, 0.0, -8.0, -12.0, -15.0)
@@ -1868,10 +1869,11 @@ def _finalize_voice_match_results(
         spk_max = max(spk_scores) if spk_scores else 1.0
         spk_min = min(spk_scores) if spk_scores else 0.0
         spk_span = spk_max - spk_min
+        use_relative = spk_span >= NORMALIZE_MIN_SPAN and spk_max >= SPK_RELATIVE_NORM_MIN_MAX
         for r in results:
             raw_spk = float(r.get("speaker_score", 0))
-            if spk_span < NORMALIZE_MIN_SPAN:
-                r["speaker_score"] = round(raw_spk * 100.0, 1)
+            if not use_relative:
+                r["speaker_score"] = round(raw_spk, 1)
             else:
                 r["speaker_score"] = round(NORMALIZE_TARGET_BOTTOM + (raw_spk - spk_min) / spk_span * (100.0 - NORMALIZE_TARGET_BOTTOM), 1)
     _normalize_similarities_across_demos(results)
