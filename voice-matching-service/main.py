@@ -203,6 +203,13 @@ VOCAL_CLASSIFY_MFCC_VAR_LOW_DENSITY = 1.2
 VOCAL_CLASSIFY_TIMBRE_BRIGHT_SCORE = 65.0
 VOCAL_CLASSIFY_LOW_BAND_HZ = 300.0
 VOCAL_CLASSIFY_LOW_BAND_RATIO_DENSE = 0.52
+# Voice subtype (6-class) MIDI boundaries
+SUBTYPE_SOPRANO_MIN_MIDI = 60.0   # C4
+SUBTYPE_MEZZO_MIN_MIDI   = 55.0   # G3
+SUBTYPE_ALTO_MIN_MIDI    = 50.0   # D3
+SUBTYPE_TENOR_MIN_MIDI   = 46.0   # Bb2
+SUBTYPE_BARITONE_MIN_MIDI = 40.0  # E2
+# below SUBTYPE_BARITONE_MIN_MIDI -> bass
 VOCAL_TYPE_RANK_DISTANCE_WEIGHT = 20.0
 GENDER_MISMATCH_RANK_PENALTY = 35.0
 GENDER_MISMATCH_HARD_RANK_PENALTY = 40.0
@@ -603,6 +610,25 @@ def _timbre_is_dense_chest(
     return False
 
 
+def _classify_voice_subtype(midi: float, light_bright: bool, dense_chest: bool) -> str:
+    """Map pitch MIDI + timbre to one of 6 classical voice subtypes."""
+    if midi <= 0:
+        return "unknown"
+    # Female subtypes (higher pitch)
+    if midi >= SUBTYPE_SOPRANO_MIN_MIDI:
+        return "soprano"
+    if midi >= SUBTYPE_MEZZO_MIN_MIDI:
+        return "mezzo" if not dense_chest else "alto"
+    if midi >= SUBTYPE_ALTO_MIN_MIDI:
+        return "alto"
+    # Male subtypes (lower pitch)
+    if midi >= SUBTYPE_TENOR_MIN_MIDI:
+        return "tenor" if light_bright else "baritone"
+    if midi >= SUBTYPE_BARITONE_MIN_MIDI:
+        return "baritone"
+    return "bass"
+
+
 def classify_vocal_type_multi_feature(
     waveform: Any,
     sr: int,
@@ -748,6 +774,11 @@ def _apply_multi_feature_vocal_classification(
     pitch["detected_vocal_type"] = str(result["detected_vocal_type"])
     pitch["high_pitched_male"] = bool(result["high_pitched_male"])
     pitch["classification_confidence"] = float(result["classification_confidence"])
+    _midi = _pitch_midi_value(pitch)
+    _lb = result.get("light_bright", False)
+    _dc = result.get("dense_chest", False)
+    pitch["voice_subtype"] = _classify_voice_subtype(_midi, bool(_lb), bool(_dc))
+    result["voice_subtype"] = pitch["voice_subtype"]
     return result
 
 
@@ -3555,6 +3586,7 @@ def _run_voice_match(
                 "vocal_character_score": vc_sc,
                     "reasons": reasons,
                     "detected_vocal_type": demo_row["detected_vocal_type"],
+                    "voice_subtype": demo_row.get("voice_subtype", "unknown"),
                     "classification_confidence": demo_row.get(
                         "classification_confidence",
                         demo_pitch.get("classification_confidence"),
