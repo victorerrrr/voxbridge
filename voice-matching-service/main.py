@@ -664,7 +664,8 @@ def classify_vocal_type_multi_feature(
         # HNR + p90 tiebreaker in pitch_high uncertain zone
         p90 = float(pitch_features.get("p90_f0_hz", 0))
         hnr = float(pitch_features.get("hnr_db", 1.0))
-        if p90 > 220.0:
+        centroid = float(timbre_features.get("centroid_hz", 0)) if timbre_features else 0.0
+        if p90 > 220.0 or centroid >= VOCAL_CLASSIFY_CENTROID_BRIGHT_HZ:
             return {
                 "detected_vocal_type": "female",
                 "high_pitched_male": False,
@@ -692,7 +693,8 @@ def classify_vocal_type_multi_feature(
     # HNR + p90 tiebreaker: clean voice with high upper register -> female
     p90 = float(pitch_features.get("p90_f0_hz", 0))
     hnr = float(pitch_features.get("hnr_db", 1.0))
-    if p90 > 220.0:  # p90 > ~A3 (220 Hz) suggests female range
+    centroid = float(timbre_features.get("centroid_hz", 0)) if timbre_features else 0.0
+    if p90 > 220.0 or centroid >= VOCAL_CLASSIFY_CENTROID_BRIGHT_HZ:  # p90 > ~A3 or bright timbre
         return {
             "detected_vocal_type": "female",
             "high_pitched_male": False,
