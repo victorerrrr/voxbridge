@@ -1024,7 +1024,8 @@ def _load_demo_profile(demo_path: str):
         timbre = {k: (np.array(v, dtype=np.float32) if isinstance(v, list) else v)
                   for k, v in data["timbre"].items()}
         vocal_character = data["vocal_character"]
-        return waveform, embeddings, chunk_rms, pitch, timbre, vocal_character
+        language = data.get("language", "")
+        return waveform, embeddings, chunk_rms, pitch, timbre, vocal_character, language
     except Exception as e:
         logger.warning("demo profile load failed for %s: %s", demo_path, e)
         return None
@@ -3464,7 +3465,7 @@ def _run_voice_match(
         try:
             _cached = _load_demo_profile(demo_filename)
             if _cached is not None:
-                demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character = _cached
+                demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character, demo_language = _cached
                 step_ref[0] = "similarity"
                 speaker_score, chunks_used = average_chunk_similarity(
                     ai_embeddings,
@@ -3540,6 +3541,7 @@ def _run_voice_match(
                     "articulation_speed", 0.0
                 ),
                 "dynamic_range": demo_vocal_character.get("dynamic_range", 0.0),
+            "demo_language": demo_language,
             }
             _apply_demo_vocal_type_fields(
                 demo_row,
