@@ -3649,14 +3649,14 @@ def _run_voice_match(
             "no_valid_demos",
         )
 
-    if gender_override and gender_override in ("male", "female"):
-        results = [
-            row for row in results
-            if row.get("final_vocal_type") == gender_override
-        ]
+        if gender_override and gender_override in ("male", "female"):
+            results = [
+                row for row in results
+                if row.get("final_vocal_type") == gender_override
+            ]
         finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override, ai_language=ai_language, part_language=part_language)
-    _sync_progress(progress, finalized["results"], partial)
-    return finalized
+        _sync_progress(progress, finalized["results"], partial)
+        return finalized
 
 
 @app.post("/voice-match")
@@ -3666,6 +3666,8 @@ async def voice_match(
     demo_display_names: Annotated[str | None, Form()] = None,
     query_tags: Annotated[str | None, Form()] = None,
     gender_override: Annotated[str | None, Form()] = None,
+    ai_language: Annotated[str | None, Form()] = None,
+    part_language: Annotated[str | None, Form()] = None,
 ):
     logger.info("request received")
     temp_dir: str | None = None
@@ -3733,7 +3735,7 @@ async def voice_match(
 
         outcome = await asyncio.wait_for(
             asyncio.to_thread(
-                _run_voice_match, temp_dir, ai_path, demo_entries, progress, parsed_query_tags, gender_override
+                _run_voice_match, temp_dir, ai_path, demo_entries, progress, parsed_query_tags, gender_override, ai_language, part_language
             ),
             timeout=REQUEST_TIMEOUT_SEC,
         )
