@@ -3638,6 +3638,9 @@ def _run_voice_match(
                 break
         except ValueError as exc:
             return _json_error(400, str(exc), str(exc), step_ref[0])
+        except Exception as _exc:
+            logger.error("UNEXPECTED in loop: %s", _exc, exc_info=True)
+            raise
 
     if not results:
         if partial:
@@ -3654,9 +3657,10 @@ def _run_voice_match(
                 row for row in results
                 if row.get("final_vocal_type") == gender_override
             ]
-        finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override, ai_language=ai_language, part_language=part_language)
-        _sync_progress(progress, finalized["results"], partial)
-        return finalized
+    finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override, ai_language=ai_language, part_language=part_language)
+    _sync_progress(progress, finalized["results"], partial)
+    logger.info("returning finalized, keys: %s", list(finalized.keys()) if finalized else None)
+    return finalized
 
 
 @app.post("/voice-match")
