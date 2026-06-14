@@ -84,9 +84,9 @@ export function resolveMatchConfidenceLevel(
   result: Pick<AiVoiceMatchResult, "confidence" | "matchPercent" | "similarity">
 ): MatchConfidenceLevel {
   const score = result.matchPercent ?? result.confidence ?? result.similarity;
-  if (score >= 75) return "very-strong";
-  if (score >= 58) return "good";
-  if (score >= 40) return "partial";
+  if (score >= 87) return "very-strong";
+  if (score >= 75) return "good";
+  if (score >= 60) return "partial";
   return "weak";
 }
 
