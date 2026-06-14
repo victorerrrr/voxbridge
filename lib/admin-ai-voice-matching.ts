@@ -1873,7 +1873,9 @@ export function buildVoiceMatchFormData(
   aiVocalFile: File,
   demos: VocalistDemoItem[],
   queryTags?: Record<string, string[]>,
-  genderOverride?: string
+  genderOverride?: string,
+  aiLanguage?: string,
+  partLanguage?: string
 ): { formData: FormData; demoInputs: VoiceMatchDemoInput[] } {
   if (!aiVocalFile.size) {
     throw new Error("AI vocal file is empty.");
@@ -1912,6 +1914,12 @@ export function buildVoiceMatchFormData(
   }
   if (genderOverride && genderOverride !== "auto") {
     formData.append("gender_override", genderOverride);
+  }
+  if (aiLanguage) {
+    formData.append("ai_language", aiLanguage);
+  }
+  if (partLanguage) {
+    formData.append("part_language", partLanguage);
   }
   return { formData, demoInputs };
 }

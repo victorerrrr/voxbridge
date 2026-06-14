@@ -391,7 +391,10 @@ export function AiVoiceMatchingLab() {
       const { formData, demoInputs } = buildVoiceMatchFormData(
         aiVocal.file,
         demos,
-        selectedQueryTags
+        selectedQueryTags,
+        undefined,
+        aiLanguage || undefined,
+        partLanguage || undefined
       );
 
       console.log("sending voice-match request", {

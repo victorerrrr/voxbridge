@@ -1890,6 +1890,8 @@ def _finalize_voice_match_results(
     partial: bool,
     query_tags: dict = None,
     gender_override: str | None = None,
+    ai_language: str | None = None,
+    part_language: str | None = None,
 ) -> dict[str, Any]:
     ai_pitch_features: dict[str, float | str] = {}
     if results:
@@ -1908,6 +1910,12 @@ def _finalize_voice_match_results(
             else:
                 r["speaker_score"] = round(NORMALIZE_TARGET_BOTTOM + (raw_spk - spk_min) / spk_span * (100.0 - NORMALIZE_TARGET_BOTTOM), 1)
     _normalize_similarities_across_demos(results)
+    # Language penalty: if ai_language and part_language differ, penalize demos with wrong language
+    if ai_language and part_language and ai_language != part_language:
+        for r in results:
+            demo_lang = r.get("demo_language", "")
+            if demo_lang and demo_lang != part_language:
+                r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.75, 1))
     logger.info("After stretch: %s", [(r.get("demo_filename","?"), r.get("similarity")) for r in results])
     for row in results:
         vocal_types_align = bool(row.pop("_vocal_types_align", True))
@@ -3385,6 +3393,8 @@ def _run_voice_match(
     progress: VoiceMatchProgress | None = None,
     query_tags: dict | None = None,
     gender_override: str | None = None,
+    ai_language: str | None = None,
+    part_language: str | None = None,
 ) -> list[dict] | dict[str, Any] | JSONResponse:
     budget = RequestBudget()
     step_ref: list[str] = ["loading"]
@@ -3417,6 +3427,10 @@ def _run_voice_match(
         )
         if gender_override and gender_override in ("male", "female"):
             ai_pitch["detected_vocal_type"] = gender_override
+        if ai_language:
+            ai_pitch["ai_language"] = ai_language
+        if part_language:
+            ai_pitch["part_language"] = part_language
         ai_quality = quality_score(ai_waveform)
         ai_vocal_character = compute_vocal_character_features(ai_waveform)
         logger.info(
@@ -3638,7 +3652,7 @@ def _run_voice_match(
             row for row in results
             if row.get("final_vocal_type") == gender_override
         ]
-    finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override)
+        finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override, ai_language=ai_language, part_language=part_language)
     _sync_progress(progress, finalized["results"], partial)
     return finalized
 
