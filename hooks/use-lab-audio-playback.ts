@@ -23,7 +23,7 @@ export function useLabAudioPlayback() {
   }, []);
 
   const togglePlayback = useCallback(
-    (id: LabPlaybackId, url: string) => {
+    (id: LabPlaybackId, url: string, startTime?: number) => {
       if (activeIdRef.current === id) {
         stopPlayback();
         return;
@@ -34,7 +34,7 @@ export function useLabAudioPlayback() {
       audio.pause();
       audio.onended = null;
       audio.src = url;
-      audio.currentTime = 0;
+      audio.currentTime = startTime ?? 0;
       activeIdRef.current = id;
       setActivePlaybackId(id);
       audio.onended = () => {

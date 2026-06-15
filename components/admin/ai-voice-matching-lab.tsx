@@ -892,15 +892,7 @@ export function AiVoiceMatchingLab() {
                       label={`▶ Best match ~${Math.round(row.best_match_sec)}s`}
                       demoId={`best-${row.id}`}
                       onClick={() => {
-                        playDemo(row.demoAudioUrl, row.id);
-                        setTimeout(() => {
-                          const allAudio = document.querySelectorAll("audio");
-                          allAudio.forEach((a) => {
-                            if (a.src === row.demoAudioUrl || a.currentSrc === row.demoAudioUrl) {
-                              a.currentTime = row.best_match_sec!;
-                            }
-                          });
-                        }, 100);
+                        togglePlayback(`demo-${row.id}`, row.demoAudioUrl, row.best_match_sec ?? 0);
                       }}
                     />
                   )}
