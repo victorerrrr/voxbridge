@@ -3525,6 +3525,7 @@ def _run_voice_match(
                     ai_chunk_rms,
                     demo_chunk_rms,
                 )
+                best_match_sec = _find_best_match_sec(ai_embeddings, demo_embeddings)
                 if chunks_used < 2:
                     speaker_score = _round_score(
                         speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
