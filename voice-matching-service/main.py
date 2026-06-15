@@ -2412,6 +2412,28 @@ def _extract_chunk_embeddings(
     return waveform, embeddings, chunk_rms
 
 
+def _find_best_match_sec(
+    ai_embeddings: dict,
+    demo_embeddings: dict,
+) -> float:
+    """Find the demo chunk with highest cosine similarity to AI embeddings.
+    Returns start time in seconds of the best matching chunk."""
+    if not ai_embeddings or not demo_embeddings:
+        return 0.0
+    # Average AI embedding across all chunks
+    ai_vecs = list(ai_embeddings.values())
+    ai_avg = np.mean([v for v in ai_vecs if v is not None], axis=0)
+    best_idx = 0
+    best_sim = -1.0
+    for idx, demo_vec in demo_embeddings.items():
+        if demo_vec is None:
+            continue
+        sim = float(1.0 - cosine(ai_avg, demo_vec))
+        if sim > best_sim:
+            best_sim = sim
+            best_idx = int(idx)
+    return round(best_idx * CHUNK_DURATION_SEC, 1)
+
 def _cosine_similarity_percent(a: np.ndarray, b: np.ndarray) -> float:
     similarity = 1.0 - float(cosine(a, b))
     similarity = max(0.0, min(1.0, similarity))
@@ -3473,6 +3495,7 @@ def _run_voice_match(
                     ai_chunk_rms,
                     demo_chunk_rms,
                 )
+                best_match_sec = _find_best_match_sec(ai_embeddings, demo_embeddings)
                 if chunks_used < 2:
                     speaker_score = _round_score(
                         speaker_score * SINGLE_CHUNK_SPEAKER_DISCOUNT
@@ -3626,6 +3649,7 @@ def _run_voice_match(
                     "_spectral_centroid_proxy": float(
                         _mfcc_cosine_similarity(ai_timbre, demo_timbre)
                     ),
+                        "best_match_sec": best_match_sec,
                 }
             )
             _sync_progress(progress, results, partial)

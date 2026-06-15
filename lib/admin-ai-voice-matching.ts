@@ -1662,6 +1662,7 @@ export type VoiceMatchApiRow = {
   ai_pitch_avg?: number;
   explanation?: string;
   chunks_used?: number;
+  best_match_sec?: number;
   confidence?: number;
   speaker_score?: number;
   timbre_score?: number;

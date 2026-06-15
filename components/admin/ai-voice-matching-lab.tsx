@@ -887,6 +887,16 @@ export function AiVoiceMatchingLab() {
                         )}
                         onClick={() => playDemo(row.demoAudioUrl, row.id)}
                       />
+                  {row.best_match_sec != null && (
+                    <AdminActionButton
+                      label={`▶ Best match ~${Math.round(row.best_match_sec)}s`}
+                      demoId={`best-${row.id}`}
+                      onClick={() => {
+                        const audio = demoAudioRefs.current[row.id];
+                        if (audio) { audio.currentTime = row.best_match_sec!; audio.play(); }
+                      }}
+                    />
+                  )}
                     </div>
                   </td>
                 </tr>
