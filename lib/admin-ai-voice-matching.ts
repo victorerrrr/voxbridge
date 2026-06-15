@@ -70,6 +70,7 @@ export type AiVoiceMatchResult = {
   /** Mismatch tags for debug or «Что отличается» tooling (display). */
   mismatchFeatureTags?: string[];
   demoAudioUrl: string;
+  best_match_sec?: number;
   breakdown: VoiceMatchScoreBreakdown;
 };
 
@@ -2093,6 +2094,7 @@ export function mapVoiceMatchResultsFromApi(
             ? row.explanation.trim()
             : undefined,
         demoAudioUrl: demo?.audioUrl ?? "",
+          best_match_sec: row.best_match_sec,
         breakdown: mapScoreBreakdown(row),
       };
     });

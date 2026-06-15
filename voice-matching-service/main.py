@@ -2429,7 +2429,7 @@ def _find_best_match_sec(
         if demo_vec is None:
             continue
         sim = float(1.0 - cosine(ai_avg, demo_vec))
-        if sim > best_sim:
+        if sim < best_sim:
             best_sim = sim
             best_idx = int(idx)
     return round(best_idx * CHUNK_DURATION_SEC, 1)
