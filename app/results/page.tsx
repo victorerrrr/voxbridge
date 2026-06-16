@@ -131,7 +131,25 @@ export default function ResultsPage() {
         return;
       }
       const data = JSON.parse(raw);
-      const rows: AiVoiceMatchResult[] = Array.isArray(data) ? data : data.results ?? [];
+      const rawRows = Array.isArray(data) ? data : data.results ?? [];
+      const rows: AiVoiceMatchResult[] = rawRows.map((r: Record<string, unknown>, i: number) => ({
+        ...r,
+        id: r.id as string ?? r.filename as string ?? String(i),
+        vocalistName: r.vocalistName as string ?? r.filename as string ?? "Vocalist " + (i + 1),
+        matchPercent: r.matchPercent as number ?? r.similarity as number ?? 0,
+        finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
+        displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
+        demoAudioUrl: r.demoAudioUrl as string ?? "",
+        best_match_sec: r.best_match_sec as number ?? 0,
+        confidence: r.confidence as number ?? r.similarity as number ?? 0,
+        similarity: r.similarity as number ?? 0,
+        index: r.index as number ?? i,
+        isTopMatch: r.isTopMatch as boolean ?? r.is_top_match as boolean ?? false,
+        filename: r.filename as string ?? "",
+        featureTags: r.featureTags as string[] ?? [],
+        matchFeatureTags: r.matchFeatureTags as string[] ?? [],
+        breakdown: r.breakdown as AiVoiceMatchResult["breakdown"],
+      } as AiVoiceMatchResult));
       setResults(rows);
     } catch {
       setError("Failed to load results.");
