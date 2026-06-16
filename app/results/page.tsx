@@ -26,8 +26,10 @@ function ConfidenceBadge({ row }: { row: AiVoiceMatchResult }) {
   );
 }
 
+let _globalAudio: HTMLAudioElement | null = null;
+let _globalStop: (() => void) | null = null;
+
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
 
   if (!row.demoAudioUrl) return null;
@@ -36,19 +38,20 @@ function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   const label = sec > 0 ? `▶ Best match ~${Math.round(sec)}s` : "▶ Play demo";
 
   const toggle = () => {
-    if (!audioRef.current) {
-      const a = new Audio(row.demoAudioUrl);
-      audioRef.current = a;
-      a.addEventListener("ended", () => setPlaying(false));
-    }
     if (playing) {
-      audioRef.current.pause();
+      _globalAudio?.pause();
       setPlaying(false);
-    } else {
-      audioRef.current.currentTime = sec;
-      audioRef.current.play();
-      setPlaying(true);
+      _globalStop = null;
+      return;
     }
+    if (_globalStop) _globalStop();
+    const a = new Audio(row.demoAudioUrl);
+    _globalAudio = a;
+    _globalStop = () => { a.pause(); setPlaying(false); };
+    a.currentTime = sec;
+    a.addEventListener("ended", () => { setPlaying(false); _globalStop = null; });
+    a.play();
+    setPlaying(true);
   };
 
   return (
@@ -139,7 +142,7 @@ export default function ResultsPage() {
         matchPercent: r.matchPercent as number ?? r.similarity as number ?? 0,
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
         displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
-        demoAudioUrl: r.demoAudioUrl as string ?? "",
+        demoAudioUrl: r.demoAudioUrl as string ?? (r.filename ? `http://localhost:8000/demo-audio/${encodeURIComponent(r.filename as string)}` : ""),
         best_match_sec: r.best_match_sec as number ?? 0,
         confidence: r.confidence as number ?? r.similarity as number ?? 0,
         similarity: r.similarity as number ?? 0,
