@@ -3652,6 +3652,7 @@ def _run_voice_match(
                         _mfcc_cosine_similarity(ai_timbre, demo_timbre)
                     ),
                         "best_match_sec": best_match_sec,
+                    "demo_language": demo_language,
                 }
             )
             _sync_progress(progress, results, partial)
