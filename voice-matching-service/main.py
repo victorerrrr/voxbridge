@@ -4528,6 +4528,36 @@ async def submit_feedback(payload: dict):
     return {"status": "ok", "entry": entry}
 
 
+@app.put("/demo-language")
+async def update_demo_language(payload: dict):
+    demo_filename = str(payload.get("demo_filename", "")).strip()
+    language = str(payload.get("language", "")).strip()
+    if not demo_filename or not language:
+        return {"error": "demo_filename and language are required"}
+    profiles_dir = os.path.join(os.path.dirname(__file__), "demo_profiles")
+    # Try direct json filename match or stem match
+    candidate = demo_filename if demo_filename.endswith(".json") else demo_filename.replace(".wav", ".json")
+    fpath = os.path.join(profiles_dir, candidate)
+    if not os.path.exists(fpath):
+        # fallback: search by stem
+        stem = os.path.splitext(demo_filename)[0].lower()
+        candidate = None
+        for fname in os.listdir(profiles_dir):
+            if fname.endswith(".json") and os.path.splitext(fname)[0].lower() == stem:
+                candidate = fname
+                break
+        if not candidate:
+            return {"error": f"profile not found for {demo_filename}"}
+        fpath = os.path.join(profiles_dir, candidate)
+    data = json.load(open(fpath))
+    matched = (candidate, data)
+    fname, data = matched
+    data["language"] = language
+    json.dump(data, open(os.path.join(profiles_dir, fname), "w"), indent=2)
+    logger.info("demo-language updated: %s -> %s", fname, language)
+    return {"status": "ok", "file": fname, "language": language}
+
+
 @app.post("/voice-match-batch")
 async def voice_match_batch(
     ai_vocals: Annotated[list[UploadFile], File()],
