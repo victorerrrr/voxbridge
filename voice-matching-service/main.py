@@ -3543,6 +3543,7 @@ def _run_voice_match(
                     demo_waveform, ECAPA_SAMPLE_RATE
                 )
                 _save_demo_profile(demo_filename, demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character)
+                demo_language = ""
             timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             _apply_multi_feature_vocal_classification(
                 demo_pitch,
