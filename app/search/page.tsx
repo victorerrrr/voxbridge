@@ -80,13 +80,13 @@ function SearchPageContent() {
 
     try {
       const formData = new FormData();
-      if (file) formData.append("file", file);
+      if (file) formData.append("ai_vocal", file);
       formData.append("ai_language", aiLanguage);
       formData.append("part_language", partLanguage);
-      if (genreTags.length) formData.append("genre", genreTags[0]);
+      if (genreTags.length) formData.append("query_tags", genreTags[0]);
 
       setLoadingProgress(30);
-      const res = await fetch("http://localhost:8000/voice-match", {
+      const res = await fetch("http://localhost:8000/voice-match-producer", {
         method: "POST",
         body: formData,
       });

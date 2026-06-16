@@ -4647,3 +4647,44 @@ async def precompute_demo():
         except Exception as e:
             results.append({"file": demo_path.name, "status": "error", "error": str(e)})
     return {"status": "ok", "processed": len(results), "results": results}
+
+
+@app.post("/voice-match-producer")
+async def voice_match_producer(
+    ai_vocal: Annotated[UploadFile, File()],
+    query_tags: Annotated[str | None, Form()] = None,
+    gender_override: Annotated[str | None, Form()] = None,
+    ai_language: Annotated[str | None, Form()] = None,
+    part_language: Annotated[str | None, Form()] = None,
+):
+    """Producer flow: match AI vocal against all demos in the demos/ folder."""
+    import tempfile, shutil
+    if not ai_vocal.filename:
+        return _json_error(422, "Missing required field: ai_vocal", "missing_ai_vocal")
+
+    demos_dir = pathlib.Path(__file__).parent / "demos"
+    demo_files = sorted(demos_dir.glob("*.wav")) + sorted(demos_dir.glob("*.mp3"))
+    if not demo_files:
+        return _json_error(422, "No demo files found in demos/ folder", "no_demos")
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        ai_path = pathlib.Path(temp_dir) / (ai_vocal.filename or "ai_vocal.wav")
+        with open(ai_path, "wb") as f:
+            shutil.copyfileobj(ai_vocal.file, f)
+
+        demo_entries = [(p, p.name) for p in demo_files]
+        tags_dict = _parse_query_tags_form(query_tags) if query_tags else None
+
+        result = _run_voice_match(
+            temp_dir=temp_dir,
+            ai_path=ai_path,
+            demo_entries=demo_entries,
+            query_tags=tags_dict,
+            gender_override=gender_override,
+            ai_language=ai_language,
+            part_language=part_language,
+        )
+        return result
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
