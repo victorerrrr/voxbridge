@@ -21,6 +21,8 @@ export type UploadContext = {
   savedAt: string;
   /** Set when a real AI vocal file was uploaded (optional explicit flag). */
   hasAiVocalFile?: boolean;
+  aiLanguage?: string;
+  partLanguage?: string;
 };
 
 const listeners = new Set<() => void>();

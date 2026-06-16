@@ -42,8 +42,12 @@ function SearchPageContent() {
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [sunoUrl, setSunoUrl] = useState("");
+  const [aiLanguage, setAiLanguage] = useState("English");
+  const [partLanguage, setPartLanguage] = useState("English");
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const context = {
       ...defaultUploadContext(),
@@ -59,9 +63,47 @@ function SearchPageContent() {
       spotifyUrl: spotifyUrl.trim(),
       youtubeUrl: youtubeUrl.trim(),
       sunoUrl: sunoUrl.trim(),
+      aiLanguage,
+      partLanguage,
     };
     saveUploadContext(context);
-    router.push("/results");
+
+    const fileInput = document.getElementById("referenceFile") as HTMLInputElement;
+    const file = fileInput?.files?.[0];
+    if (!file && !describeOnly) {
+      alert("Please upload an AI vocal file.");
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadingProgress(10);
+
+    try {
+      const formData = new FormData();
+      if (file) formData.append("file", file);
+      formData.append("ai_language", aiLanguage);
+      formData.append("part_language", partLanguage);
+      if (genreTags.length) formData.append("genre", genreTags[0]);
+
+      setLoadingProgress(30);
+      const res = await fetch("http://localhost:8000/voice-match", {
+        method: "POST",
+        body: formData,
+      });
+      setLoadingProgress(80);
+
+      if (!res.ok) throw new Error("Matching failed: " + res.status);
+      const data = await res.json();
+      sessionStorage.setItem("voxbridge_match_results", JSON.stringify(data));
+      setLoadingProgress(100);
+      router.push("/results");
+    } catch (err) {
+      console.error(err);
+      alert("Matching failed. Is the backend running?");
+    } finally {
+      setIsLoading(false);
+      setLoadingProgress(0);
+    }
   };
 
   return (
@@ -188,13 +230,50 @@ function SearchPageContent() {
             />
           </div>
 
+          {isLoading && (
+            <div className="w-full rounded-full bg-zinc-800 h-2 overflow-hidden">
+              <div
+                className="h-2 bg-purple-500 transition-all duration-500"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">AI vocal language</label>
+              <select
+                value={aiLanguage}
+                onChange={(e) => setAiLanguage(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
+              >
+                {["English","Spanish","French","German","Portuguese","Italian","Hindi","Afrikaans","Other"].map(l => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Part language</label>
+              <select
+                value={partLanguage}
+                onChange={(e) => setPartLanguage(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
+              >
+                {["English","Spanish","French","German","Portuguese","Italian","Hindi","Afrikaans","Other"].map(l => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-3 pt-2">
             <AnimatedButton
               type="submit"
               variant="primary"
-              className="inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-medium"
+              disabled={isLoading}
+              className="inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-50"
             >
-              Run AI Matching
+              {isLoading ? "Matching…" : "Run AI Matching"}
             </AnimatedButton>
             <AnimatedButton
               href="/become-vocalist"
