@@ -7,6 +7,7 @@ import { AnimatedButton } from "@/components/animated-button";
 import { UploadContextBanner } from "@/components/upload-context-banner";
 import { useUploadContext } from "@/lib/hooks/use-upload-context";
 import { AiVoiceMatchResult, resolveMatchConfidenceLevel, formatMatchConfidenceLabel } from "@/lib/admin-ai-voice-matching";
+import { VoiceRadarChart } from "@/components/admin/voice-radar-chart";
 
 const CONFIDENCE_COLORS: Record<string, string> = {
   "very-strong": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
@@ -91,6 +92,19 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
         />
       </div>
 
+      {row.breakdown && (
+        <div className="mb-3 flex justify-center">
+          <VoiceRadarChart
+            speakerScore={row.breakdown.speakerScore ?? 0}
+            timbreScore={row.breakdown.timbreScore ?? 0}
+            pitchScore={row.breakdown.pitchScore ?? 0}
+            qualityScore={row.breakdown.qualityScore ?? 0}
+            vocalCharacterScore={(row as any).vocalCharacterScore ?? 0}
+            size={140}
+          />
+        </div>
+      )}
+
       {row.matchFeatureTags && row.matchFeatureTags.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
           {row.matchFeatureTags.slice(0, 4).map((tag) => (
@@ -151,8 +165,14 @@ export default function ResultsPage() {
         filename: r.filename as string ?? "",
         featureTags: r.featureTags as string[] ?? [],
         matchFeatureTags: r.matchFeatureTags as string[] ?? [],
-        breakdown: r.breakdown as AiVoiceMatchResult["breakdown"],
-      } as AiVoiceMatchResult));
+        breakdown: {
+          speakerScore: r.speaker_score as number ?? 0,
+          timbreScore: r.timbre_score as number ?? 0,
+          pitchScore: r.pitch_score as number ?? 0,
+          qualityScore: r.quality_score as number ?? 0,
+        },
+        vocalCharacterScore: r.vocal_character_score as number ?? 0,
+      } as unknown as AiVoiceMatchResult));
       setResults(rows);
     } catch {
       setError("Failed to load results.");
