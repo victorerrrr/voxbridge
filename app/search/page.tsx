@@ -121,6 +121,7 @@ function SearchPageContent() {
         <form
           onSubmit={onSubmit}
           className="mt-8 space-y-6 rounded-2xl border border-white/10 bg-zinc-950/60 p-6"
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "BUTTON") e.preventDefault(); }}
         >
           {!describeOnly && (
             <div>
