@@ -1750,6 +1750,7 @@ def _build_voice_match_response(
             "ai_vocal_type": results[0].get("ai_vocal_type")
             or results[0].get("ai_detected_vocal_type"),
             "timbre_score_baseline": float(results[0].get("timbre_score", 0) or 0),
+            "ai_reference_filename": results[0].get("ai_reference_filename", ""),
         }
     return payload
 
@@ -4595,6 +4596,10 @@ async def voice_match_batch(
                 )
             )
             results.append({"ai_filename": ai_file.filename, "matches": match_results})
+        _ai_uploads_dir = pathlib.Path(__file__).parent / "ai_uploads"
+        _ai_uploads_dir.mkdir(exist_ok=True)
+        if ai_path and ai_path.exists():
+            shutil.copy2(str(ai_path), str(_ai_uploads_dir / (ai_file.filename or "ai.wav")))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
     return {"results": results}
@@ -4712,4 +4717,15 @@ async def get_demo_audio(filename: str):
     file_path = demos_dir / filename
     if not file_path.exists() or not file_path.is_file():
         return _json_error(404, f"Demo file not found: {filename}", "not_found")
+    return FileResponse(str(file_path), media_type="audio/wav")
+
+
+@app.get("/ai-audio/{filename}")
+async def get_ai_audio(filename: str):
+    """Serve AI vocal files from the ai_uploads/ folder."""
+    from fastapi.responses import FileResponse
+    ai_uploads_dir = pathlib.Path(__file__).parent / "ai_uploads"
+    file_path = ai_uploads_dir / filename
+    if not file_path.exists() or not file_path.is_file():
+        return _json_error(404, f"AI audio file not found: {filename}", "not_found")
     return FileResponse(str(file_path), media_type="audio/wav")
