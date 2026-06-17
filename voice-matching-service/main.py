@@ -1911,11 +1911,11 @@ def _finalize_voice_match_results(
             else:
                 r["speaker_score"] = round(NORMALIZE_TARGET_BOTTOM + (raw_spk - spk_min) / spk_span * (100.0 - NORMALIZE_TARGET_BOTTOM), 1)
     _normalize_similarities_across_demos(results)
-    # Language penalty: if ai_language and part_language differ, penalize demos with wrong language
-    if ai_language and part_language and ai_language != part_language:
+    # Language penalty: if ai_language is set, penalize demos whose language differs
+    if ai_language:
         for r in results:
             demo_lang = r.get("demo_language", "")
-            if demo_lang and demo_lang != part_language:
+            if demo_lang and demo_lang != ai_language:
                 r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.75, 1))
     logger.info("After stretch: %s", [(r.get("demo_filename","?"), r.get("similarity")) for r in results])
     for row in results:
