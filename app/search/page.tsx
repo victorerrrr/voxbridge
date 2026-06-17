@@ -248,7 +248,7 @@ function SearchPageContent() {
                 onChange={(e) => setAiLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["English","Spanish","French","German","Portuguese","Italian","Hindi","Afrikaans","Other"].map(l => (
+                {["English","Spanish","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>
@@ -260,7 +260,7 @@ function SearchPageContent() {
                 onChange={(e) => setPartLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["English","Spanish","French","German","Portuguese","Italian","Hindi","Afrikaans","Other"].map(l => (
+                {["English","Spanish","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>
