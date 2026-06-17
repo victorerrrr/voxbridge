@@ -1914,7 +1914,7 @@ def _finalize_voice_match_results(
     # Language penalty: if ai_language is set, penalize demos whose language differs
     if ai_language:
         import json as _json
-        profiles_dir = pathlib.Path(DEMO_PROFILES_DIR)
+        profiles_dir = _DEMO_PROFILES_DIR
         for r in results:
             _pfile = profiles_dir / (r.get("demo_filename", "").replace(".wav", ".json"))
             _langs = _json.loads(_pfile.read_text()).get("languages", []) if _pfile.exists() else []
