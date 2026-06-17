@@ -44,6 +44,7 @@ function SearchPageContent() {
   const [sunoUrl, setSunoUrl] = useState("");
   const [aiLanguage, setAiLanguage] = useState("English");
   const [partLanguage, setPartLanguage] = useState("English");
+  const [genderOverride, setGenderOverride] = useState<"female" | "male" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
@@ -84,6 +85,7 @@ function SearchPageContent() {
       formData.append("ai_language", aiLanguage);
       formData.append("part_language", partLanguage);
       if (genreTags.length) formData.append("query_tags", genreTags[0]);
+      if (genderOverride) formData.append("gender_override", genderOverride);
 
       setLoadingProgress(30);
       const res = await fetch("http://localhost:8000/voice-match-producer", {
@@ -229,6 +231,26 @@ function SearchPageContent() {
               placeholder="Suno link"
               className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none ring-purple-500/50 placeholder:text-zinc-500 focus:ring-2"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs text-zinc-400 mb-2">Vocalist gender</label>
+            <div className="flex gap-2">
+              {([["female", "Female"], ["any", "Any"], ["male", "Male"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setGenderOverride(val === "any" ? null : val as "female" | "male")}
+                  className={`rounded-lg border px-4 py-2 text-sm transition ${
+                    (val === "any" && genderOverride === null) || genderOverride === val
+                      ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                      : "border-white/10 bg-zinc-900 text-zinc-400 hover:border-white/20"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {isLoading && (
