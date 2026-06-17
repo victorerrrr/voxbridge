@@ -3571,6 +3571,7 @@ def _run_voice_match(
                 ),
                 "dynamic_range": demo_vocal_character.get("dynamic_range", 0.0),
             "demo_language": demo_language,
+            "display_name": json.loads((_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).read_text()).get("display_name", "") if (_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).exists() else "",
             }
             _apply_demo_vocal_type_fields(
                 demo_row,
@@ -3657,6 +3658,7 @@ def _run_voice_match(
                     ),
                         "best_match_sec": best_match_sec,
                     "demo_language": demo_language,
+                "display_name": json.loads((_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).read_text()).get("display_name", "") if (_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).exists() else "",
                 }
             )
             _sync_progress(progress, results, partial)
