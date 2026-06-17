@@ -1750,7 +1750,7 @@ def _build_voice_match_response(
             "ai_vocal_type": results[0].get("ai_vocal_type")
             or results[0].get("ai_detected_vocal_type"),
             "timbre_score_baseline": float(results[0].get("timbre_score", 0) or 0),
-            "ai_reference_filename": results[0].get("ai_reference_filename", ""),
+            "ai_reference_filename": (results[0].get("_ai_pitch") or {}).get("ai_reference_filename", ""),
         }
     return payload
 
