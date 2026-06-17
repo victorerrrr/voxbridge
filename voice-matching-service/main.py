@@ -1916,8 +1916,9 @@ def _finalize_voice_match_results(
         import json as _json
         profiles_dir = _DEMO_PROFILES_DIR
         for r in results:
-            _pfile = profiles_dir / (r.get("demo_filename", "").replace(".wav", ".json"))
-            _langs = _json.loads(_pfile.read_text()).get("languages", []) if _pfile.exists() else []
+            _fname = r.get("demo_filename", "")
+            _pfile = _DEMO_PROFILES_DIR / _fname.replace(".wav", ".json") if _fname else None
+            _langs = json.loads(_pfile.read_text()).get("languages", []) if _pfile and _pfile.exists() else []
             if _langs and ai_language not in _langs:
                 r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.75, 1))
     for row in results:
