@@ -1913,11 +1913,13 @@ def _finalize_voice_match_results(
     _normalize_similarities_across_demos(results)
     # Language penalty: if ai_language is set, penalize demos whose language differs
     if ai_language:
+        import json as _json
+        profiles_dir = pathlib.Path(DEMO_PROFILES_DIR)
         for r in results:
-            demo_lang = r.get("demo_language", "")
-            if demo_lang and demo_lang != ai_language:
+            _pfile = profiles_dir / (r.get("demo_filename", "").replace(".wav", ".json"))
+            _langs = _json.loads(_pfile.read_text()).get("languages", []) if _pfile.exists() else []
+            if _langs and ai_language not in _langs:
                 r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.75, 1))
-    logger.info("After stretch: %s", [(r.get("demo_filename","?"), r.get("similarity")) for r in results])
     for row in results:
         vocal_types_align = bool(row.pop("_vocal_types_align", True))
         ai_pitch = row.get("_ai_pitch", {})
