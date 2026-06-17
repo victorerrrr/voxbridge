@@ -1920,7 +1920,7 @@ def _finalize_voice_match_results(
             _pfile = _DEMO_PROFILES_DIR / _fname.replace(".wav", ".json") if _fname else None
             _langs = json.loads(_pfile.read_text()).get("languages", []) if _pfile and _pfile.exists() else []
             if _langs and ai_language not in _langs:
-                r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.75, 1))
+                r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.4, 1))
     for row in results:
         vocal_types_align = bool(row.pop("_vocal_types_align", True))
         ai_pitch = row.get("_ai_pitch", {})

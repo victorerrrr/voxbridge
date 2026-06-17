@@ -42,8 +42,8 @@ function SearchPageContent() {
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [sunoUrl, setSunoUrl] = useState("");
-  const [aiLanguage, setAiLanguage] = useState("English");
-  const [partLanguage, setPartLanguage] = useState("English");
+  const [aiLanguage, setAiLanguage] = useState("");
+  const [partLanguage, setPartLanguage] = useState("");
   const [genderOverride, setGenderOverride] = useState<"female" | "male" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -82,7 +82,7 @@ function SearchPageContent() {
     try {
       const formData = new FormData();
       if (file) formData.append("ai_vocal", file);
-      formData.append("ai_language", aiLanguage);
+      if (aiLanguage && aiLanguage !== "Any") formData.append("ai_language", aiLanguage);
       formData.append("part_language", partLanguage);
       if (genreTags.length) formData.append("query_tags", genreTags[0]);
       if (genderOverride) formData.append("gender_override", genderOverride);
@@ -270,7 +270,7 @@ function SearchPageContent() {
                 onChange={(e) => setAiLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["English","Spanish","Hindi","Afrikaans","Other"].map(l => (
+                {["Any","English","Spanish","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>
@@ -282,7 +282,7 @@ function SearchPageContent() {
                 onChange={(e) => setPartLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["English","Spanish","Hindi","Afrikaans","Other"].map(l => (
+                {["Any","English","Spanish","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>
