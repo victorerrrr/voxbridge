@@ -30,6 +30,35 @@ function ConfidenceBadge({ row }: { row: AiVoiceMatchResult }) {
 let _globalAudio: HTMLAudioElement | null = null;
 let _globalStop: (() => void) | null = null;
 
+function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
+  const [playing, setPlaying] = useState(false);
+  if (!row.aiReferenceUrl) return null;
+  const toggle = () => {
+    if (playing) {
+      _globalAudio?.pause();
+      setPlaying(false);
+      _globalStop = null;
+      return;
+    }
+    if (_globalStop) _globalStop();
+    const url = row.aiReferenceUrl as string;
+    const a = new Audio(url);
+    _globalAudio = a;
+    _globalStop = () => { a.pause(); setPlaying(false); };
+    a.addEventListener("ended", () => { setPlaying(false); _globalStop = null; });
+    a.play();
+    setPlaying(true);
+  };
+  return (
+    <button
+      onClick={toggle}
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+    >
+      {playing ? "⏸ AI Vocal" : "▶ AI Vocal"}
+    </button>
+  );
+}
+
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   const [playing, setPlaying] = useState(false);
 
@@ -117,6 +146,7 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <BestMatchButton row={row} />
+                <AiVocalButton row={row} />
         <AnimatedButton
           href={`/vocalists/${row.id}`}
           variant="primary"
@@ -157,6 +187,7 @@ export default function ResultsPage() {
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
         displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
         demoAudioUrl: r.demoAudioUrl as string ?? (r.filename ? `http://localhost:8000/demo-audio/${encodeURIComponent(r.filename as string)}` : ""),
+          aiReferenceUrl: r.ai_reference_filename ? `http://localhost:8000/ai-audio/${encodeURIComponent(r.ai_reference_filename as string)}` : undefined,
         best_match_sec: r.best_match_sec as number ?? 0,
         confidence: r.confidence as number ?? r.similarity as number ?? 0,
         similarity: r.similarity as number ?? 0,

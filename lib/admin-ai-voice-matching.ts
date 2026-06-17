@@ -70,6 +70,7 @@ export type AiVoiceMatchResult = {
   /** Mismatch tags for debug or «Что отличается» tooling (display). */
   mismatchFeatureTags?: string[];
   demoAudioUrl: string;
+  aiReferenceUrl?: string;
   best_match_sec?: number;
   breakdown: VoiceMatchScoreBreakdown;
 };
