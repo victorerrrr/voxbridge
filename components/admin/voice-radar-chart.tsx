@@ -26,8 +26,9 @@ export function VoiceRadarChart({
   timbreScore, pitchScore, qualityScore, vocalCharacterScore, speakerScore, size = 155,
 }: RadarChartProps) {
   const [tooltip, setTooltip] = useState<{ label: string; tip: string; x: number; y: number } | null>(null);
-  const cx = size / 2;
-  const cy = size / 2;
+  const pad = size * 0.22;
+  const cx = size / 2 + pad;
+  const cy = size / 2 + pad;
   const maxR = size * 0.33;
   const n = AXES.length;
   const values: Record<string, number> = {
@@ -54,7 +55,7 @@ export function VoiceRadarChart({
   const labelPoints = axisAngles.map((angle) => polarToXY(angle, maxR * 1.28, cx, cy));
   return (
       <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1" }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${size + pad * 2} ${size + pad * 2}`}>
         {gridPolygons.map((pts, i) => (
           <polygon key={i} points={pts} fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.8" />
         ))}

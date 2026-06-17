@@ -100,7 +100,7 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
             pitchScore={row.breakdown.pitchScore ?? 0}
             qualityScore={row.breakdown.qualityScore ?? 0}
             vocalCharacterScore={(row as any).vocalCharacterScore ?? 0}
-            size={100}
+            size={80}
           />
         </div>
       )}
