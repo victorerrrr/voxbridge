@@ -4596,6 +4596,7 @@ async def voice_match_batch(
                 )
             )
             results.append({"ai_filename": ai_file.filename, "matches": match_results})
+        logger.info("AI UPLOAD DEBUG: ai_path=%s exists=%s filename=%s", ai_path, ai_path.exists() if ai_path else None, ai_file.filename)
         _ai_uploads_dir = pathlib.Path(__file__).parent / "ai_uploads"
         _ai_uploads_dir.mkdir(exist_ok=True)
         if ai_path and ai_path.exists():
@@ -4693,6 +4694,11 @@ async def voice_match_producer(
             ai_language=ai_language,
             part_language=part_language,
         )
+        _ai_uploads_dir = pathlib.Path(__file__).parent / "ai_uploads"
+        _ai_uploads_dir.mkdir(exist_ok=True)
+        if ai_path and ai_path.exists():
+            shutil.copy2(str(ai_path), str(_ai_uploads_dir / (ai_vocal.filename or "ai.wav")))
+            logger.info("AI UPLOAD: copied %s to ai_uploads/", ai_vocal.filename)
         return result
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

@@ -179,6 +179,7 @@ export default function ResultsPage() {
       }
       const data = JSON.parse(raw);
       const rawRows = Array.isArray(data) ? data : data.results ?? [];
+    const aiRefFilename: string = data?.ai_reference?.ai_reference_filename ?? "";
       const rows: AiVoiceMatchResult[] = rawRows.map((r: Record<string, unknown>, i: number) => ({
         ...r,
         id: r.id as string ?? r.filename as string ?? String(i),
@@ -187,7 +188,7 @@ export default function ResultsPage() {
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
         displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
         demoAudioUrl: r.demoAudioUrl as string ?? (r.filename ? `http://localhost:8000/demo-audio/${encodeURIComponent(r.filename as string)}` : ""),
-          aiReferenceUrl: r.ai_reference_filename ? `http://localhost:8000/ai-audio/${encodeURIComponent(r.ai_reference_filename as string)}` : undefined,
+          aiReferenceUrl: aiRefFilename ? `http://localhost:8000/ai-audio/${encodeURIComponent(aiRefFilename)}` : undefined,
         best_match_sec: r.best_match_sec as number ?? 0,
         confidence: r.confidence as number ?? r.similarity as number ?? 0,
         similarity: r.similarity as number ?? 0,
