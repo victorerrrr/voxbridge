@@ -44,7 +44,8 @@ function PlayerBar({ url, startAt = 0, label, color = "bg-purple-500" }: { url: 
     }
     if (_globalStop) _globalStop();
     const a = new Audio(url);
-    _globalAudio = a;alse); };
+    _globalAudio = a;
+    _globalStop = () => { a.pause(); setPlaying(false); };
     a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
     a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
     a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
@@ -65,7 +66,7 @@ function PlayerBar({ url, startAt = 0, label, color = "bg-purple-500" }: { url: 
     <div className="flex flex-col gap-1 w-full">
       <div className="flex items-center gap-2">
         <button onClick={toggle} className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 border border-white/10 hover:bg-zinc-700 text-white transition-colors">
-          {playing ? "⏸" : "▶"} {label}
+          {playing ? "pause" : "play"} {label}
         </button>
         <span className="text-xs text-white/40 tabular-nums shrink-0">{fmt(currentTime)}{duration > 0 ? " / " + fmt(duration) : ""}</span>
       </div>
@@ -84,10 +85,10 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   if (!row.demoAudioUrl) return null;
   const sec = row.best_match_sec ?? 0;
-  const label = sec > 0 ? "Best match ~" + Math.round(sec) + "s" : "Play demo";
+  const label = sec > 0 ? "Best match" : "Play demo";
   return <PlayerBar url={row.demoAudioUrl as string} startAt={sec} label={label} color="bg-zinc-400" />;
 }
-}
+
 function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
   const isTop = rank === 0;
   return (
@@ -116,19 +117,17 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
       </div>
 
       {row.breakdown && (
-        <div className="flex items-center gap-4">
-          <div className="shrink-0">
+        <div className="mb-3 flex justify-center">
           <VoiceRadarChart
             speakerScore={row.breakdown.speakerScore ?? 0}
             timbreScore={row.breakdown.timbreScore ?? 0}
             pitchScore={row.breakdown.pitchScore ?? 0}
             qualityScore={row.breakdown.qualityScore ?? 0}
             vocalCharacterScore={(row as any).vocalCharacterScore ?? 0}
-            size={120}
+            size={80}
           />
-          </div>
         </div>
-        )}
+      )}
 
       {row.matchFeatureTags && row.matchFeatureTags.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
