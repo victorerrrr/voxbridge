@@ -145,7 +145,8 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
       </div>
 
       {row.breakdown && (
-        <div className="mb-3 flex justify-center">
+        <div className="flex items-center gap-4">
+          <div className="shrink-0">
           <VoiceRadarChart
             speakerScore={row.breakdown.speakerScore ?? 0}
             timbreScore={row.breakdown.timbreScore ?? 0}
@@ -154,7 +155,7 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
             vocalCharacterScore={(row as any).vocalCharacterScore ?? 0}
             size={120}
           />
-        </div>
+          </div>
       )}
 
       {row.matchFeatureTags && row.matchFeatureTags.length > 0 && (
