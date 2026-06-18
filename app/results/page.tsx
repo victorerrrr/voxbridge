@@ -76,13 +76,12 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
 }
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   const [playing, setPlaying] = useState(false);
-
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   if (!row.demoAudioUrl) return null;
-
   const sec = row.best_match_sec ?? 0;
-  const label = sec > 0 ? `▶ Best match ~${Math.round(sec)}s` : "▶ Play demo";
-
-  const toggle = () => {
+  const label = sec > 0 ? "▶ Best match ~" + Math.round(sec) + "s" : "▶ Play demo";
+  function toggle() {
     if (playing) {
       _globalAudio?.pause();
       setPlaying(false);
@@ -94,21 +93,30 @@ function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
     _globalAudio = a;
     _globalStop = () => { a.pause(); setPlaying(false); };
     a.currentTime = sec;
-    a.addEventListener("ended", () => { setPlaying(false); _globalStop = null; });
+    a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
+    a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
+    a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
     a.play();
     setPlaying(true);
-  };
-
+  }
+  const pct = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
+  const fmt = (s: number) => String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   return (
-    <button
-      onClick={toggle}
-      className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 transition"
-    >
-      {playing ? "⏸ Stop" : label}
-    </button>
+    <div className="flex flex-col gap-1">
+      <button onClick={toggle} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 transition">
+        {playing ? "⏸ Stop" : label}
+      </button>
+      {playing && (
+        <div className="flex items-center gap-2 px-1">
+          <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+            <div className="h-full bg-zinc-400 rounded-full transition-all" style={{ width: pct + "%" }} />
+          </div>
+          <span className="text-xs text-white/60 tabular-nums">{fmt(currentTime)}</span>
+        </div>
+      )}
+    </div>
   );
 }
-
 function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
   const isTop = rank === 0;
   return (
