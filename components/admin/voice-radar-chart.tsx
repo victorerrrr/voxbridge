@@ -57,13 +57,13 @@ export function VoiceRadarChart({
       <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1" }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${size + pad * 2} ${size + pad * 2}`}>
         {gridPolygons.map((pts, i) => (
-          <polygon key={i} points={pts} fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.8" />
+          <polygon key={i} points={pts} fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.4" />
         ))}
         {axisAngles.map((angle, i) => {
           const end = polarToXY(angle, maxR, cx, cy);
-          return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="rgba(139,92,246,0.22)" strokeWidth="0.8" />;
+          return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="rgba(139,92,246,0.22)" strokeWidth="0.4" />;
         })}
-        <polygon points={dataPolygon} fill="rgba(139,92,246,0.22)" stroke="rgba(139,92,246,0.85)" strokeWidth="1.5" />
+        <polygon points={dataPolygon} fill="rgba(139,92,246,0.22)" stroke="rgba(139,92,246,0.85)" strokeWidth="0.9" />
         {dataPoints.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r="2.2" fill="rgba(139,92,246,1)" />
         ))}
