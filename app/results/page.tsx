@@ -156,7 +156,8 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
             size={120}
           />
           </div>
-      )}
+        </div>
+        )}
 
       {row.matchFeatureTags && row.matchFeatureTags.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
