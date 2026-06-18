@@ -30,11 +30,11 @@ function ConfidenceBadge({ row }: { row: AiVoiceMatchResult }) {
 let _globalAudio: HTMLAudioElement | null = null;
 let _globalStop: (() => void) | null = null;
 
-function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
+function PlayerBar({ url, startAt = 0, label, color = "bg-purple-500" }: { url: string; startAt?: number; label: string; color?: string }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  if (!row.aiReferenceUrl) return null;
+  if (!url) return null;
   function toggle() {
     if (playing) {
       _globalAudio?.pause();
@@ -43,79 +43,50 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
       return;
     }
     if (_globalStop) _globalStop();
-    const url = row.aiReferenceUrl as string;
     const a = new Audio(url);
-    _globalAudio = a;
-    _globalStop = () => { a.pause(); setPlaying(false); };
+    _globalAudio = a;alse); };
     a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
     a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
     a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
+    a.currentTime = startAt;
     a.play();
     setPlaying(true);
   }
-  const pct = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
+  function seek(e: React.MouseEvent<HTMLDivElement>) {
+    if (!_globalAudio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    _globalAudio.currentTime = pct * duration;
+    setCurrentTime(pct * duration);
+  }
+  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const fmt = (s: number) => String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   return (
-    <div className="flex flex-col gap-1">
-      <button
-        onClick={toggle}
-        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors"
-      >
-        {playing ? "⏸ AI Vocal" : "▶ AI Vocal"}
-      </button>
-      {playing && (
-        <div className="flex items-center gap-2 px-1">
-          <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
-            <div className="h-full bg-purple-400 rounded-full transition-all" style={{ width: pct + "%" }} />
-          </div>
-          <span className="text-xs text-white/60 tabular-nums">{fmt(currentTime)}</span>
-        </div>
-      )}
+    <div className="flex flex-col gap-1 w-full">
+      <div className="flex items-center gap-2">
+        <button onClick={toggle} className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 border border-white/10 hover:bg-zinc-700 text-white transition-colors">
+          {playing ? "⏸" : "▶"} {label}
+        </button>
+        <span className="text-xs text-white/40 tabular-nums shrink-0">{fmt(currentTime)}{duration > 0 ? " / " + fmt(duration) : ""}</span>
+      </div>
+      <div className="relative h-2 w-full rounded-full bg-white/10 cursor-pointer overflow-hidden" onClick={seek}>
+        <div className={"h-full rounded-full transition-none " + color} style={{ width: pct + "%" }} />
+      </div>
     </div>
   );
 }
+
+function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
+  if (!row.aiReferenceUrl) return null;
+  return <PlayerBar url={row.aiReferenceUrl as string} label="AI Vocal" color="bg-purple-500" />;
+}
+
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   if (!row.demoAudioUrl) return null;
   const sec = row.best_match_sec ?? 0;
-  const label = sec > 0 ? "▶ Best match ~" + Math.round(sec) + "s" : "▶ Play demo";
-  function toggle() {
-    if (playing) {
-      _globalAudio?.pause();
-      setPlaying(false);
-      _globalStop = null;
-      return;
-    }
-    if (_globalStop) _globalStop();
-    const a = new Audio(row.demoAudioUrl);
-    _globalAudio = a;
-    _globalStop = () => { a.pause(); setPlaying(false); };
-    a.currentTime = sec;
-    a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
-    a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
-    a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
-    a.play();
-    setPlaying(true);
-  }
-  const pct = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
-  const fmt = (s: number) => String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
-  return (
-    <div className="flex flex-col gap-1">
-      <button onClick={toggle} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 transition">
-        {playing ? "⏸ Stop" : label}
-      </button>
-      {playing && (
-        <div className="flex items-center gap-2 px-1">
-          <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
-            <div className="h-full bg-zinc-400 rounded-full transition-all" style={{ width: pct + "%" }} />
-          </div>
-          <span className="text-xs text-white/60 tabular-nums">{fmt(currentTime)}</span>
-        </div>
-      )}
-    </div>
-  );
+  const label = sec > 0 ? "Best match ~" + Math.round(sec) + "s" : "Play demo";
+  return <PlayerBar url={row.demoAudioUrl as string} startAt={sec} label={label} color="bg-zinc-400" />;
+}
 }
 function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
   const isTop = rank === 0;
@@ -169,9 +140,9 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <BestMatchButton row={row} />
-                <AiVocalButton row={row} />
+        <div className="flex flex-col gap-3 mt-3">
+          <BestMatchButton row={row} />
+          <AiVocalButton row={row} />
         <AnimatedButton
           href={`/vocalists/${row.id}`}
           variant="primary"
