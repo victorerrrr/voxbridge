@@ -48,7 +48,7 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
     _globalAudio = a;
     _globalStop = () => { a.pause(); setPlaying(false); };
     a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
-    a.addEstener("timeupdate", () => { setCurrentTime(a.currentTime); });
+    a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
     a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
     a.play();
     setPlaying(true);
