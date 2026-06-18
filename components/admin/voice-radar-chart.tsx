@@ -69,7 +69,7 @@ export function VoiceRadarChart({
         ))}
         {labelPoints.map((p, i) => (
           <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
-            fontSize="8" fill="rgba(255,255,255,0.55)" fontFamily="system-ui, sans-serif"
+            fontSize="6" fill="rgba(255,255,255,0.55)" fontFamily="system-ui, sans-serif"
             style={{ cursor: "help" }}
             onMouseEnter={() => setTooltip({ label: AXES[i].label, tip: AXES[i].tip, x: p.x, y: p.y })}
             onMouseLeave={() => setTooltip(null)}
