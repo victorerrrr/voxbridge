@@ -100,7 +100,7 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
           </div>
           <div>
             <h2 className="text-base font-semibold text-white leading-tight">{row.vocalistName}</h2>
-            <p className="text-xs text-zinc-400">{row.displayVocalType}</p>
+            <p className="text-xs text-zinc-400">{row.displayVocalType}{(row as any).demo_language ? " · " + (row as any).demo_language : ""}</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -197,7 +197,7 @@ export default function ResultsPage() {
       const rows: AiVoiceMatchResult[] = rawRows.map((r: Record<string, unknown>, i: number) => ({
         ...r,
         id: r.id as string ?? r.filename as string ?? String(i),
-        vocalistName: r.vocalistName as string ?? r.filename as string ?? "Vocalist " + (i + 1),
+        vocalistName: r.display_name as string ?? r.vocalistName as string ?? r.filename as string ?? "Vocalist " + (i + 1),
         matchPercent: r.matchPercent as number ?? r.similarity as number ?? 0,
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
         displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
