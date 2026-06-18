@@ -35,7 +35,7 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   if (!row.aiReferenceUrl) return null;
-  const toggle = () => {
+  function toggle() {
     if (playing) {
       _globalAudio?.pause();
       setPlaying(false);
@@ -47,16 +47,16 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
     const a = new Audio(url);
     _globalAudio = a;
     _globalStop = () => { a.pause(); setPlaying(false); };
-    a.addEventListener("loadedmetadata", () => setDuration(a.duration));
-    a.addEventListener("timeupdate", () => setCurrentTime(a.currentTime));
-    a.addEventListener("ended", () => { setPlaying(false); _globalStop = null; setCurrentTime(0); });
+    a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
+    a.addEstener("timeupdate", () => { setCurrentTime(a.currentTime); });
+    a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
     a.play();
     setPlaying(true);
-  };
+  }
   const pct = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
-  const fmtTime = (s: number) => String(Math.floor(s/60)) + ":" + String(Math.floor(s%60)).padStart(2,"0");
+  const fmt = (s: number) => String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   return (
-    <div className="flex flex-col gap-1 min-w-0">
+    <div className="flex flex-col gap-1">
       <button
         onClick={toggle}
         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors"
@@ -64,36 +64,16 @@ function AiVocalButton({ row }: { row: AiVoiceMatchResult }) {
         {playing ? "⏸ AI Vocal" : "▶ AI Vocal"}
       </button>
       {playing && (
-        <div className="flex items-center gap-1 w-full">
-          <span className="text-xs text-zinc-400">{fmtTime(currentTime)}</span>
-          <div className="flex-1 h-1 bg-zinc-700 rounded-full">
-            <div className="h-1 bg-purple-500 rounded-full" style={{ width: pct + "%" }} />
+        <div className="flex items-center gap-2 px-1">
+          <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+            <div className="h-full bg-purple-400 rounded-full transition-all" style={{ width: pct + "%" }} />
           </div>
-          <span className="text-xs text-zinc-400">{fmtTime(duration)}</span>
+          <span className="text-xs text-white/60 tabular-nums">{fmt(currentTime)}</span>
         </div>
       )}
     </div>
   );
 }
-    if (_globalStop) _globalStop();
-    const url = row.aiReferenceUrl as string;
-    const a = new Audio(url);
-    _globalAudio = a;
-    _globalStop = () => { a.pause(); setPlaying(false); };
-    a.addEventListener("ended", () => { setPlaying(false); _globalStop = null; });
-    a.play();
-    setPlaying(true);
-  };
-  return (
-    <button
-      onClick={toggle}
-      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors"
-    >
-      {playing ? "⏸ AI Vocal" : "▶ AI Vocal"}
-    </button>
-  );
-}
-
 function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   const [playing, setPlaying] = useState(false);
 
