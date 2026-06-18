@@ -66,7 +66,7 @@ function PlayerBar({ url, startAt = 0, label, color = "bg-purple-500" }: { url: 
     <div className="flex flex-col gap-1 w-full">
       <div className="flex items-center gap-2">
         <button onClick={toggle} className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 border border-white/10 hover:bg-zinc-700 text-white transition-colors">
-          {playing ? "pause" : "play"} {label}
+          {playing ? "⏸" : "▶"} {label}
         </button>
         <span className="text-xs text-white/40 tabular-nums shrink-0">{fmt(currentTime)}{duration > 0 ? " / " + fmt(duration) : ""}</span>
       </div>
