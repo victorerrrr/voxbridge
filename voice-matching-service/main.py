@@ -3659,6 +3659,11 @@ def _run_voice_match(
                         "best_match_sec": best_match_sec,
                     "demo_language": demo_language,
                 "display_name": json.loads((_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).read_text()).get("display_name", "") if (_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).exists() else "",
+                "breathiness": demo_row.get("breathiness", 0.0),
+                "vibrato_rate": demo_row.get("vibrato_rate", 0.0),
+                "vibrato_depth": demo_row.get("vibrato_depth", 0.0),
+                "melodic_range_semitones": demo_row.get("melodic_range_semitones", 0.0),
+                "pitch_stability": demo_row.get("pitch_stability", 0.0),
                 }
             )
             _sync_progress(progress, results, partial)
