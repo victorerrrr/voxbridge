@@ -4546,23 +4546,25 @@ async def update_demo_language(payload: dict):
     if not demo_filename or not language:
         return {"error": "demo_filename and language are required"}
     profiles_dir = os.path.join(os.path.dirname(__file__), "demo_profiles")
-    # Try direct json filename match or stem match
-    candidate = demo_filename if demo_filename.endswith(".json") else demo_filename.replace(".wav", ".json")
+    # Always resolve the real on-disk filename via case-insensitive stem match.
+    # Direct os.path.exists() is unsafe here: on case-preserving/case-insensitive
+    # filesystems (macOS) it can return True for a name with the wrong case, and
+    # the wrong-case name would then be used for read/write/log/response — which
+    # breaks on case-sensitive filesystems (Linux prod).
+    direct_candidate = demo_filename if demo_filename.endswith(".json") else demo_filename.replace(".wav", ".json")
+    stem = os.path.splitext(demo_filename)[0].lower()
+    candidate = None
+    for fname in os.listdir(profiles_dir):
+        if not fname.endswith(".json"):
+            continue
+        if fname == direct_candidate or os.path.splitext(fname)[0].lower() == stem:
+            candidate = fname
+            break
+    if not candidate:
+        return {"error": f"profile not found for {demo_filename}"}
     fpath = os.path.join(profiles_dir, candidate)
-    if not os.path.exists(fpath):
-        # fallback: search by stem
-        stem = os.path.splitext(demo_filename)[0].lower()
-        candidate = None
-        for fname in os.listdir(profiles_dir):
-            if fname.endswith(".json") and os.path.splitext(fname)[0].lower() == stem:
-                candidate = fname
-                break
-        if not candidate:
-            return {"error": f"profile not found for {demo_filename}"}
-        fpath = os.path.join(profiles_dir, candidate)
     data = json.load(open(fpath))
-    matched = (candidate, data)
-    fname, data = matched
+    fname = candidate
     data["language"] = language
     json.dump(data, open(os.path.join(profiles_dir, fname), "w"), indent=2)
     logger.info("demo-language updated: %s -> %s", fname, language)
