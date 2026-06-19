@@ -106,22 +106,6 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
         <div className="flex flex-col items-end gap-1">
           <span className="text-2xl font-bold text-white">{row.matchPercent}%</span>
           <ConfidenceBadge row={row} />
-              {(() => {
-                const r = row as any;
-                const tags: string[] = [];
-                if (r.breathiness > 0.18) tags.push("Breathy");
-                if (r.vibrato_rate > 4.5 && r.vibrato_depth > 0.08) tags.push("Vibrato");
-                if (r.melodic_range_semitones > 14) tags.push(Math.round(r.melodic_range_semitones) + " st");
-                if (r.pitch_stability < 1.0) tags.push("Stable pitch");
-                if (!tags.length) return null;
-                return (
-                  <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
-                    {tags.map(t => (
-                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">{t}</span>
-                    ))}
-                  </div>
-                );
-              })()} 
         </div>
       </div>
 
@@ -160,6 +144,22 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
                   <span className="text-xs text-white/40 w-7 text-right">{Math.round(val ?? 0)}</span>
                 </div>
               ))}
+              {(() => {
+                const r = row as any;
+                const tags: string[] = [];
+                if (r.breathiness > 0.18) tags.push("Breathy");
+                if (r.vibrato_rate > 4.5 && r.vibrato_depth > 0.08) tags.push("Vibrato");
+                if (r.melodic_range_semitones > 14) tags.push(Math.round(r.melodic_range_semitones) + " st");
+                if (r.pitch_stability < 1.0) tags.push("Stable pitch");
+                if (!tags.length) return null;
+                return (
+                  <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+                    {tags.map(t => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">{t}</span>
+                    ))}
+                  </div>
+                );
+              })()} 
             </div>
           </div>
         )}
