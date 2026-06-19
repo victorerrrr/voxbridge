@@ -153,7 +153,7 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
                 if (r.pitch_stability < 1.0) tags.push("Stable pitch");
                 if (!tags.length) return null;
                 return (
-                  <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+                  <div className="flex flex-wrap gap-1.5 mt-10 mb-1">
                     {tags.map(t => (
                       <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">{t}</span>
                     ))}
@@ -216,7 +216,7 @@ export default function ResultsPage() {
         vocalistName: r.display_name as string ?? r.vocalistName as string ?? r.filename as string ?? "Vocalist " + (i + 1),
         matchPercent: r.matchPercent as number ?? r.similarity as number ?? 0,
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
-        displayVocalType: r.displayVocalType as string ?? r.detected_vocal_type as string ?? "",
+        displayVocalType: r.displayVocalType as string ?? r.final_vocal_type as string ?? r.detected_vocal_type as string ?? "",
         demoAudioUrl: r.demoAudioUrl as string ?? (r.filename ? `http://localhost:8000/demo-audio/${encodeURIComponent(r.filename as string)}` : ""),
           aiReferenceUrl: aiRefFilename ? `http://localhost:8000/ai-audio/${encodeURIComponent(aiRefFilename)}` : undefined,
         best_match_sec: r.best_match_sec as number ?? 0,
