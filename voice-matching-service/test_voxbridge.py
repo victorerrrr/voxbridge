@@ -76,3 +76,31 @@ class TestCodeInvariants:
         returns = [l.strip() for l in body.splitlines() if l.strip().startswith("return ") and "," in l]
         assert len(returns) >= 1
         assert returns[0].count(",") + 1 == 7
+
+    def test_producer_response_has_voice_character_fields(self):
+        """Regression guard: the final results.append({...}) dict in
+        _run_voice_match must include all 5 voice-character fields, or the
+        frontend silently receives null (no error in logs) — see the
+        breathiness/vibrato/melodic_range/pitch_stability bug fixed this
+        session.
+        """
+        src = open(self.MAIN).read()
+        idx = src.find("def _run_voice_match(")
+        assert idx != -1
+        body = src[idx:idx + 12000]
+        required_fields = [
+            "breathiness",
+            "vibrato_rate",
+            "vibrato_depth",
+            "melodic_range_semitones",
+            "pitch_stability",
+        ]
+        append_idx = body.find("results.append(")
+        assert append_idx != -1, "results.append(...) not found in _run_voice_match"
+        append_block = body[append_idx:append_idx + 4000]
+        for field in required_fields:
+            needle = f'"{field}": demo_row.get("{field}"'
+            assert needle in append_block, (
+                f"Missing '{field}' in the final results.append(...) dict — "
+                f"it must be copied from demo_row or the frontend will get null."
+            )
