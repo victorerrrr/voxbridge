@@ -10,6 +10,7 @@ import { defaultUploadContext, saveUploadContext } from "@/lib/upload-context";
 const GENRE_SUGGESTIONS = ["Pop", "House", "EDM", "R&B", "Indie", "Cinematic", "Afro House"];
 const VOICE_SUGGESTIONS = ["Female", "Male", "Warm", "Airy", "Deep", "Raspy", "Breathy"];
 const MOOD_SUGGESTIONS = ["Emotional", "Euphoric", "Dark", "Dreamy", "Aggressive", "Intimate"];
+const KNOWN_GENRES = ["opera", "classical", "rnb", "soul", "rap", "hip-hop", "singing"];
 
 export default function SearchPage() {
   return (
@@ -251,6 +252,31 @@ function SearchPageContent() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-zinc-400 mb-2">Voice style</label>
+            <div className="flex gap-2">
+              {([["any", "Any"], ["singing", "Singing"], ["rap", "Rap"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setGenreTags(val === "any" ? [] : [val])}
+                  className={`rounded-lg border px-4 py-2 text-sm transition ${
+                    (val === "any" && genreTags.length === 0) || genreTags[0] === val
+                      ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                      : "border-white/10 bg-zinc-900 text-zinc-400 hover:border-white/20"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {genreTags[0] && !KNOWN_GENRES.includes(genreTags[0].toLowerCase()) && (
+              <p className="mt-2 text-xs text-zinc-500">
+                &ldquo;{genreTags[0]}&rdquo; is a descriptive tag &mdash; it does not affect the matching algorithm. Recognized styles: Rap, Hip-hop, Singing, R&amp;B, Soul, Opera, Classical.
+              </p>
+            )}
           </div>
 
           {isLoading && (
