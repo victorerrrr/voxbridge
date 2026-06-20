@@ -15,6 +15,7 @@ interface RadarChartProps {
   vocalCharacterScore: number;
   speakerScore: number;
   size?: number;
+  labelFontSize?: number;
 }
 
 function polarToXY(angle: number, r: number, cx: number, cy: number) {
@@ -23,13 +24,19 @@ function polarToXY(angle: number, r: number, cx: number, cy: number) {
 }
 
 export function VoiceRadarChart({
-  timbreScore, pitchScore, qualityScore, vocalCharacterScore, speakerScore, size = 155,
+  timbreScore, pitchScore, qualityScore, vocalCharacterScore, speakerScore, size = 155, labelFontSize,
 }: RadarChartProps) {
   const [tooltip, setTooltip] = useState<{ label: string; tip: string; x: number; y: number } | null>(null);
   const pad = size * 0.22;
   const cx = size / 2 + pad;
   const cy = size / 2 + pad;
   const maxR = size * 0.33;
+  // Label font size: explicit labelFontSize prop wins (used by the admin
+  // lab to render bigger, more legible axis labels); otherwise falls back
+  // to the size-proportional default, which evaluates to 6 at size=120
+  // (the /results page default) — identical to the old hardcoded value,
+  // so /results stays visually unaffected.
+  const resolvedLabelFontSize = labelFontSize ?? size * 0.05;
   const n = AXES.length;
   const values: Record<string, number> = {
     speakerScore: Math.min(100, Math.max(0, speakerScore ?? 0)),
@@ -69,7 +76,7 @@ export function VoiceRadarChart({
         ))}
         {labelPoints.map((p, i) => (
           <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
-            fontSize="6" fill="rgba(255,255,255,0.55)" fontFamily="system-ui, sans-serif"
+            fontSize={resolvedLabelFontSize} fill="rgba(255,255,255,0.55)" fontFamily="system-ui, sans-serif"
             style={{ cursor: "help" }}
             onMouseEnter={() => setTooltip({ label: AXES[i].label, tip: AXES[i].tip, x: p.x, y: p.y })}
             onMouseLeave={() => setTooltip(null)}

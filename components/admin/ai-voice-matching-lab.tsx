@@ -818,6 +818,7 @@ export function AiVoiceMatchingLab() {
                   vocalCharacterScore={row.breakdown?.vocalCharacterScore ?? 0}
                   speakerScore={Math.min(100, ((row.breakdown?.speakerScore ?? 0) / 20) * 100)}
                   size={180}
+                  labelFontSize={13}
                 />
                       {IS_DEV && (
                         <p className="text-[10px] tabular-nums text-zinc-600">
