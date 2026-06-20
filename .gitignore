@@ -44,3 +44,5 @@ voice-matching-service/uvicorn.log
 node_modules/
 .next/
 .env
+__pycache__/
+*.pyc
