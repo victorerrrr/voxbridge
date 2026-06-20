@@ -187,6 +187,28 @@ V4_WEIGHTS: dict[str, float] = {
     "vocal_character": 0.08,
 }
 KNOWN_GENRES = {"opera", "classical", "rnb", "soul", "rap", "hip-hop", "singing"}
+
+
+def _parse_query_tags_form(query_tags):
+    """Parse the raw query_tags form field into a dict.
+
+    Accepts either a JSON object string (e.g. '{"genre": "rap"}') or a
+    plain tag string (e.g. "rap", sent by the Voice Style quick-filter
+    buttons on the frontend). Falls back to wrapping a non-JSON or
+    non-dict value as {"genre": <value>} rather than silently dropping
+    it, since a dropped tag would make the Voice Style filter silently
+    do nothing -- which is the bug this function exists to fix.
+    """
+    if not query_tags:
+        return {}
+    try:
+        parsed = json.loads(query_tags)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {"genre": str(query_tags).strip()}
+
 # Median F0 (Hz) → range_band for vocal-type mismatch penalties.
 F0_RANGE_LOW_HZ = 165.0
 F0_RANGE_HIGH_HZ = 220.0
