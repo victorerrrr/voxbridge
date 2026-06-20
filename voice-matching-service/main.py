@@ -186,6 +186,7 @@ V4_WEIGHTS: dict[str, float] = {
     "quality": 0.05,
     "vocal_character": 0.08,
 }
+KNOWN_GENRES = {"opera", "classical", "rnb", "soul", "rap", "hip-hop", "singing"}
 # Median F0 (Hz) → range_band for vocal-type mismatch penalties.
 F0_RANGE_LOW_HZ = 165.0
 F0_RANGE_HIGH_HZ = 220.0
@@ -1722,6 +1723,7 @@ def _build_voice_match_response(
     *,
     partial: bool = False,
     hard_gender_rule_active: bool = False,
+    query_tags: dict = None,
 ) -> dict[str, Any]:
     """API envelope: results order is final; index 0 is always top match.
 
@@ -1743,6 +1745,9 @@ def _build_voice_match_response(
         payload["partial"] = True
     if hard_gender_rule_active:
         payload["hard_gender_rule_active"] = True
+    requested_genre = str((query_tags or {}).get("genre", "")).strip().lower()
+    payload["genre_recognized"] = requested_genre in KNOWN_GENRES if requested_genre else None
+    payload["genre_used"] = requested_genre if requested_genre in KNOWN_GENRES else None
     if results:
         payload["ai_reference"] = {
             "pitch_avg": results[0].get("ai_pitch_avg"),
@@ -2040,6 +2045,7 @@ def _finalize_voice_match_results(
         results,
         partial=partial,
         hard_gender_rule_active=hard_gender_rule_active,
+        query_tags=query_tags,
     )
 
 
@@ -3040,6 +3046,12 @@ def _genre_weights(query_tags: dict) -> dict:
         w.update({chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.45, chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.25, chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.15})
     elif genre in (chr(114)+chr(97)+chr(112), chr(104)+chr(105)+chr(112)+chr(45)+chr(104)+chr(111)+chr(112)):
         w.update({chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.30, chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.35, chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.18})
+    elif genre == "singing":
+        # Explicit branch for the Voice Style "Singing" filter. Weights match
+        # the base V4_WEIGHTS defaults (melodic vocal delivery: pitch and
+        # timbre weighted highest), kept explicit here so it's easy to find
+        # and tune independently of the no-genre-tag default in the future.
+        w.update({"speaker": 0.15, "timbre": 0.42, "pitch": 0.30, "quality": 0.05, "vocal_character": 0.08})
     total = sum(w.values())
     return {k: v / total for k, v in w.items()}
 
