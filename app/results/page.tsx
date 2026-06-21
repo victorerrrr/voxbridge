@@ -194,6 +194,7 @@ export default function ResultsPage() {
   const uploadContext = useUploadContext();
   const [results, setResults] = useState<AiVoiceMatchResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [genreUsed, setGenreUsed] = useState<string | null>(null);
 
   useEffect(() => {
     if (uploadContext === undefined) return;
@@ -209,6 +210,7 @@ export default function ResultsPage() {
       }
       const data = JSON.parse(raw);
       const rawRows = Array.isArray(data) ? data : data.results ?? [];
+    setGenreUsed(typeof data?.genre_used === "string" ? data.genre_used : null);
     const aiRefFilename: string = data?.ai_reference?.ai_reference_filename ?? "";
       const rows: AiVoiceMatchResult[] = rawRows.map((r: Record<string, unknown>, i: number) => ({
         ...r,
@@ -259,6 +261,18 @@ export default function ResultsPage() {
             <p className="mt-2 text-zinc-400">
               {results ? `${results.length} vocalists ranked by acoustic similarity` : "Ranked vocalists for your brief."}
             </p>
+
+          {genreUsed && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-1 text-xs text-cyan-200">
+              {genreUsed === "rap" || genreUsed === "hip-hop"
+                ? "Rap mode: weighted more toward vocal identity and tone, less on pitch range"
+                : genreUsed === "rnb" || genreUsed === "soul"
+                ? "R&B/Soul mode: weighted more toward tone and pitch nuance"
+                : genreUsed === "opera" || genreUsed === "classical"
+                ? "Classical/Opera mode: weighted more toward pitch precision and tone"
+                : "Singing mode: balanced weighting across voice traits"}
+            </p>
+          )}
           </div>
           <AnimatedButton
             href="/search"
