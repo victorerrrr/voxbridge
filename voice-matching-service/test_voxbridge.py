@@ -104,3 +104,77 @@ class TestCodeInvariants:
                 f"Missing '{field}' in the final results.append(...) dict — "
                 f"it must be copied from demo_row or the frontend will get null."
             )
+
+class TestVoiceStyle:
+    """Regression guards for the Voice Style (Any/Singing/Rap) feature added
+    this session. Covers the _parse_query_tags_form NameError bug, the
+    KNOWN_GENRES constant, and the singing branch in _genre_weights.
+    """
+
+    MAIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+
+    def _load_main(self):
+        spec = importlib.util.spec_from_file_location("main_under_test", self.MAIN)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_known_genres_defined(self):
+        src = open(self.MAIN).read()
+        idx = src.find("KNOWN_GENRES")
+        assert idx != -1, "KNOWN_GENRES constant not found in main.py"
+        window = src[idx:idx + 200]
+        expected_genres = ["rap", "hip-hop", "singing", "opera", "classical", "rnb", "soul"]
+        for genre in expected_genres:
+            needle = '"' + genre + '"'
+            assert needle in window, "Expected genre missing from KNOWN_GENRES: " + genre
+
+    def test_parse_query_tags_form_exists(self):
+        src = open(self.MAIN).read()
+        assert "def _parse_query_tags_form(" in src, (
+            "_parse_query_tags_form is not defined -- this will cause a "
+            "NameError on /voice-match-producer when query_tags is non-empty"
+        )
+
+    def test_parse_query_tags_form_handles_plain_string(self):
+        module = self._load_main()
+        result = module._parse_query_tags_form("rap")
+        assert result == {"genre": "rap"}
+
+    def test_parse_query_tags_form_handles_json_object(self):
+        module = self._load_main()
+        raw = '{"genre": "opera", "mood": "calm"}'
+        result = module._parse_query_tags_form(raw)
+        assert result == {"genre": "opera", "mood": "calm"}
+
+    def test_parse_query_tags_form_handles_empty(self):
+        module = self._load_main()
+        assert module._parse_query_tags_form("") == {}
+        assert module._parse_query_tags_form(None) == {}
+
+    def test_parse_query_tags_form_handles_non_dict_json(self):
+        module = self._load_main()
+        raw = '["rap", "trap"]'
+        result = module._parse_query_tags_form(raw)
+        assert result == {"genre": raw}
+
+    def test_genre_weights_singing_branch_does_not_crash(self):
+        module = self._load_main()
+        weights = module._genre_weights({"genre": "singing"})
+        assert weights, "Expected non-empty weights dict for singing genre"
+        total = sum(weights.values())
+        assert abs(total - 1.0) < 1e-6, "Weights should sum to 1.0, got " + str(total)
+
+    def test_genre_weights_rap_branch(self):
+        module = self._load_main()
+        weights = module._genre_weights({"genre": "rap"})
+        assert weights["speaker"] > 0.25, "Rap branch should weight speaker timbre heavily"
+
+    def test_build_voice_match_response_accepts_query_tags(self):
+        src = open(self.MAIN).read()
+        idx = src.find("def _build_voice_match_response(")
+        assert idx != -1
+        sig = src[idx:idx + 400]
+        assert "query_tags" in sig, "_build_voice_match_response missing query_tags param"
+        assert "genre_recognized" in src[idx:idx + 2000]
+        assert "genre_used" in src[idx:idx + 2000]
