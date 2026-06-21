@@ -178,3 +178,105 @@ class TestVoiceStyle:
         assert "query_tags" in sig, "_build_voice_match_response missing query_tags param"
         assert "genre_recognized" in src[idx:idx + 2000]
         assert "genre_used" in src[idx:idx + 2000]
+
+class TestUpdateDemoLanguage:
+    """Regression guard for PUT /demo-language (fix f118697): the endpoint
+    must resolve the on-disk filename via case-insensitive stem match, not
+    os.path.exists(), because case-preserving/case-insensitive filesystems
+    (macOS) can return True for a name with the wrong case -- which would
+    then get used for the actual file read/write, silently creating a
+    duplicate file with the wrong-case name instead of updating the real one.
+
+    Uses a temp profile file inside the real demo_profiles/ dir (the endpoint
+    hardcodes its own directory resolution, so it can't be redirected) and
+    always removes it in a finally block so the 8 active demo profiles and
+    the existing test_all_have_language / test_profiles_exist assertions are
+    never affected by a failed or interrupted test run.
+    """
+
+    MAIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+    TEMP_BASENAME = "__test_demo_language_temp__"
+
+    def _load_main(self):
+        spec = importlib.util.spec_from_file_location("main_under_test_lang", self.MAIN)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _temp_json_path(self):
+        return os.path.join(PROFILES_DIR, self.TEMP_BASENAME + ".json")
+
+    def _write_temp_profile(self, initial_language=""):
+        path = self._temp_json_path()
+        with open(path, "w") as f:
+            json.dump({"display_name": "TempTestVocalist", "language": initial_language}, f)
+        return path
+
+    def _cleanup(self):
+        path = self._temp_json_path()
+        if os.path.exists(path):
+            os.remove(path)
+
+    def test_updates_language_exact_case(self):
+        module = self._load_main()
+        self._write_temp_profile(initial_language="")
+        try:
+            import asyncio
+            payload = {
+                "demo_filename": self.TEMP_BASENAME + ".wav",
+                "language": "Swahili",
+            }
+            result = asyncio.run(module.update_demo_language(payload))
+            assert result.get("status") == "ok", "Expected status=ok, got: " + str(result)
+            with open(self._temp_json_path()) as f:
+                data = json.load(f)
+            assert data["language"] == "Swahili"
+        finally:
+            self._cleanup()
+
+    def test_updates_language_wrong_case_filename(self):
+        """The core fix: a differently-cased demo_filename must still resolve
+        to the same on-disk file via stem match, not create a duplicate or
+        silently fail."""
+        module = self._load_main()
+        self._write_temp_profile(initial_language="")
+        try:
+            import asyncio
+            payload = {
+                "demo_filename": self.TEMP_BASENAME.upper() + ".WAV",
+                "language": "Zulu",
+            }
+            result = asyncio.run(module.update_demo_language(payload))
+            assert result.get("status") == "ok", "Expected status=ok, got: " + str(result)
+            siblings = [
+                f for f in os.listdir(PROFILES_DIR)
+                if f.lower().startswith(self.TEMP_BASENAME.lower())
+            ]
+            assert len(siblings) == 1, "Wrong-case lookup created a duplicate file: " + str(siblings)
+            with open(self._temp_json_path()) as f:
+                data = json.load(f)
+            assert data["language"] == "Zulu"
+        finally:
+            self._cleanup()
+
+    def test_missing_filename_returns_error(self):
+        module = self._load_main()
+        import asyncio
+        result = asyncio.run(module.update_demo_language({"language": "English"}))
+        assert "error" in result
+
+    def test_missing_language_returns_error(self):
+        module = self._load_main()
+        import asyncio
+        result = asyncio.run(module.update_demo_language({"demo_filename": "anything.wav"}))
+        assert "error" in result
+
+    def test_nonexistent_profile_returns_error(self):
+        module = self._load_main()
+        import asyncio
+        payload = {
+            "demo_filename": "__definitely_does_not_exist_anywhere__.wav",
+            "language": "English",
+        }
+        result = asyncio.run(module.update_demo_language(payload))
+        assert "error" in result
