@@ -3617,7 +3617,7 @@ def _run_voice_match(
             quality_sc = demo_quality_score(demo_quality_raw, ai_quality)
             vc_sc = _vocal_character_similarity(ai_vocal_character, demo_vocal_character)
             logger.info("VC features ai=%s demo=%s vc_sc=%.1f", ai_vocal_character, demo_vocal_character, vc_sc)
-            similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc, vc_sc, query_tags=None)
+            similarity = combine_scores(speaker_score, timbre_sc, pitch_sc, quality_sc, vc_sc, query_tags=query_tags)
             reasons = _reasons_from_breakdown(
                 speaker_score,
                 timbre_sc,
