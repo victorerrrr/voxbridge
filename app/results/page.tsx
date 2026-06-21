@@ -16,6 +16,16 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   weak: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
+const GENRE_WEIGHT_PERCENTS: Record<string, { speaker: number; timbre: number; pitch: number; quality: number; vocalCharacter: number }> = {
+  singing: { speaker: 15.0, timbre: 42.0, pitch: 30.0, quality: 5.0, vocalCharacter: 8.0 },
+  rap: { speaker: 31.2, timbre: 36.5, pitch: 18.8, quality: 5.2, vocalCharacter: 8.3 },
+  "hip-hop": { speaker: 31.2, timbre: 36.5, pitch: 18.8, quality: 5.2, vocalCharacter: 8.3 },
+  rnb: { speaker: 15.3, timbre: 45.9, pitch: 25.5, quality: 5.1, vocalCharacter: 8.2 },
+  soul: { speaker: 15.3, timbre: 45.9, pitch: 25.5, quality: 5.1, vocalCharacter: 8.2 },
+  opera: { speaker: 12.0, timbre: 34.0, pitch: 38.0, quality: 8.0, vocalCharacter: 8.0 },
+  classical: { speaker: 12.0, timbre: 34.0, pitch: 38.0, quality: 8.0, vocalCharacter: 8.0 },
+};
+
 const CONFIDENCE_EXPLANATIONS: Record<string, string> = {
   "very-strong": "Very strong match: this vocalist's voice is acoustically very close to your reference.",
   good: "Good match: this vocalist's voice is acoustically close to your reference.",
@@ -100,7 +110,7 @@ function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   return <PlayerBar url={row.demoAudioUrl as string} startAt={sec} label={label} color="bg-zinc-400" />;
 }
 
-function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
+function ResultCard({ row, rank, genreUsed }: { row: AiVoiceMatchResult; rank: number; genreUsed?: string | null }) {
   const isTop = rank === 0;
   return (
     <article className={`rounded-2xl border p-5 shadow-sm transition ${isTop ? "border-purple-500/40 bg-zinc-900/80" : "border-white/10 bg-zinc-950/60"}`}>
@@ -141,20 +151,29 @@ function ResultCard({ row, rank }: { row: AiVoiceMatchResult; rank: number }) {
             </div>
             <div className="flex flex-col gap-1.5 flex-1 justify-center py-2">
               {[
-                { label: "Тембр", val: row.breakdown.timbreScore },
-                { label: "Питч", val: row.breakdown.pitchScore },
-                { label: "Стиль", val: (row as any).vocalCharacterScore },
-                { label: "Чёткость", val: row.breakdown.qualityScore },
-                { label: "Голос", val: row.breakdown.speakerScore },
-              ].map(({ label, val }) => (
+                { label: "Тембр", val: row.breakdown.timbreScore, weightKey: "timbre" as const },
+                { label: "Питч", val: row.breakdown.pitchScore, weightKey: "pitch" as const },
+                { label: "Стиль", val: (row as any).vocalCharacterScore, weightKey: "vocalCharacter" as const },
+                { label: "Чёткость", val: row.breakdown.qualityScore, weightKey: "quality" as const },
+                { label: "Голос", val: row.breakdown.speakerScore, weightKey: "speaker" as const },
+              ].map(({ label, val, weightKey }) => {
+                const weights = genreUsed ? GENRE_WEIGHT_PERCENTS[genreUsed] : undefined;
+                const weightPct = weights ? weights[weightKey] : undefined;
+                return (
                 <div key={label} className="flex items-center gap-1.5">
-                  <span className="text-xs text-white/50 w-16 shrink-0">{label}</span>
+                  <span className="text-xs text-white/50 w-16 shrink-0">
+                    {label}
+                    {weightPct !== undefined && (
+                      <span className="text-white/30"> ({weightPct}%)</span>
+                    )}
+                  </span>
                   <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
                     <div className="h-full bg-purple-500/70 rounded-full" style={{ width: (val ?? 0) + "%" }} />
                   </div>
                   <span className="text-xs text-white/40 w-7 text-right">{Math.round(val ?? 0)}</span>
                 </div>
-              ))}
+              );
+              })}
               {(() => {
                 const r = row as any;
                 const tags: string[] = [];
@@ -305,7 +324,7 @@ export default function ResultsPage() {
         {results && (
           <section className="mt-6 grid gap-4 md:grid-cols-2">
             {results.map((row, i) => (
-              <ResultCard key={row.id} row={row} rank={i} />
+              <ResultCard key={row.id} row={row} rank={i} genreUsed={genreUsed} />
             ))}
           </section>
         )}
