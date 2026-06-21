@@ -4756,17 +4756,6 @@ async def get_demo_audio(filename: str):
     return FileResponse(str(file_path), media_type="audio/wav")
 
 
-@app.get("/demo-audio/{filename}")
-async def get_demo_audio(filename: str):
-    """Serve demo audio files from the demos/ folder."""
-    from fastapi.responses import FileResponse
-    demos_dir = pathlib.Path(__file__).parent / "demos"
-    file_path = demos_dir / filename
-    if not file_path.exists() or not file_path.is_file():
-        return _json_error(404, f"Demo file not found: {filename}", "not_found")
-    return FileResponse(str(file_path), media_type="audio/wav")
-
-
 @app.get("/ai-audio/{filename}")
 async def get_ai_audio(filename: str):
     """Serve AI vocal files from the ai_uploads/ folder."""
