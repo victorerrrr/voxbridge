@@ -16,12 +16,23 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   weak: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
+const CONFIDENCE_EXPLANATIONS: Record<string, string> = {
+  "very-strong": "Very strong match: this vocalist's voice is acoustically very close to your reference.",
+  good: "Good match: this vocalist's voice is acoustically close to your reference.",
+  partial: "Partial match: acoustically related, but not a guaranteed fit — worth a listen.",
+  weak: "Weak match: acoustically distant from your reference — listen before deciding.",
+};
+
 function ConfidenceBadge({ row }: { row: AiVoiceMatchResult }) {
   const level = resolveMatchConfidenceLevel(row);
   const label = formatMatchConfidenceLabel(level);
   const cls = CONFIDENCE_COLORS[level] ?? CONFIDENCE_COLORS.weak;
+  const explanation = CONFIDENCE_EXPLANATIONS[level] ?? CONFIDENCE_EXPLANATIONS.weak;
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
+    <span
+      title={explanation}
+      className={`rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
       {label}
     </span>
   );
