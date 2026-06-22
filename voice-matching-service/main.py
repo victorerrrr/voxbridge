@@ -3445,6 +3445,17 @@ def health():
     return {"status": "ok"}
 
 
+DEMO_FILENAME_TO_ID = {
+    "Real vocal 1 (м в аф).wav": "marcus-demo",
+    "Real vocal 2 girl.wav": "sofia-demo",
+    "Real vocal 3 boy.wav": "ryan-demo",
+    "Real vocal 4 girl high.wav": "aria-demo",
+    "Real vocal 5 girl на одной ноте.wav": "mia-demo",
+    "Real vocal african girl 7.wav": "zara-demo",
+    "Real vocal indian girl 8.wav": "priya-demo",
+    "Real vocal spanish girl 6.wav": "elena-demo",
+}
+
 def _run_voice_match(
     temp_dir: str,
     ai_path: Path,
@@ -3652,6 +3663,7 @@ def _run_voice_match(
             )
             results.append(
                 {
+                    "id": DEMO_FILENAME_TO_ID.get(demo_filename, demo_filename),
                     "filename": demo_filename,
                     "original_filename": demo_filename,
                     "similarity": similarity,
