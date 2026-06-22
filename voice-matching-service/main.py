@@ -3493,14 +3493,13 @@ def _run_voice_match(
         ai_quality = quality_score(ai_waveform)
         ai_vocal_character = compute_vocal_character_features(ai_waveform)
         logger.info(
-            "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f hnr=%.2f p90=%.1f",
+            "AI vocal features: file=%s median_f0=%.1fHz pitch_avg=%.1f type=%s ai_type=%s quality=%.1f p90=%.1f",
             ai_reference_filename,
             float(ai_pitch.get("avg_hz", 0) or 0),
             _pitch_midi_value(ai_pitch),
             ai_pitch.get("detected_vocal_type"),
             _ai_vocal_type(ai_pitch),
             ai_quality,
-            float(ai_pitch.get("hnr_db", 1.0)),
             float(ai_pitch.get("p90_f0_hz", 0)),
         )
     except ValueError as exc:
