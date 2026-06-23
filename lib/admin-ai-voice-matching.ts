@@ -19,6 +19,7 @@ export type VoiceMatchScoreBreakdown = {
   timbreScore: number | null;
   pitchScore: number | null;
   qualityScore: number | null;
+  vocalCharacterScore: number | null;
 };
 
 export type AiVoiceMatchResult = {
@@ -51,6 +52,8 @@ export type AiVoiceMatchResult = {
   similarityToRealVoice1?: boolean;
   /** High-pitched male reclassified as male for ranking. */
   highPitchedMale?: boolean;
+  /** Feedback-derived score adjustment from producer good/bad votes on this demo (-15 to +15). */
+  feedback_boost?: number | null;
   /** True when hard gender partition demoted this row from #1. */
   hardGenderBlockApplied?: boolean;
   /** True when real_voice_1.wav was force-demoted (never top match). */
@@ -1155,7 +1158,7 @@ export function assignUniqueFeatureTagsToResults(
 export function resolveMatchFeatureTagsForDisplay(
   row: Pick<
     AiVoiceMatchResult,
-    "featureTags" | "matchFeatureTags" | "vocalTypeMatch" | "highPitchedMale" | "aiDetectedVocalType" | "finalVocalType"
+    "featureTags" | "matchFeatureTags" | "vocalTypeMatch" | "highPitchedMale" | "aiDetectedVocalType" | "finalVocalType" | "filename" | "detectedVocalType" | "reasons"
   >
 ): string[] {
   if (row.matchFeatureTags) return row.matchFeatureTags;
@@ -2131,7 +2134,9 @@ export async function runVoiceMatching(
   selectedQueryTags: string[] = [],
   genderOverride: string = "auto"
 ): Promise<AiVoiceMatchResult[]> {
-  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos, selectedQueryTags, genderOverride);
+  const queryTagsRecord: Record<string, string[]> | undefined =
+    selectedQueryTags.length > 0 ? { genre: selectedQueryTags } : undefined;
+  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos, queryTagsRecord, genderOverride);
   logFormDataPayload(aiVocalFile, demoInputs);
   console.log("sending voice-match request");
   console.log("[voice-match] POST", VOICE_MATCH_REQUEST_URL);
@@ -2186,6 +2191,7 @@ function mockComparisonRow(
       timbreScore: 75,
       pitchScore: 75,
       qualityScore: 80,
+    vocalCharacterScore: null,
     },
     aiDetectedVocalType: "female",
     aiPitchAvg: 65,
@@ -2231,6 +2237,7 @@ export function verifyStructuredComparisonUniqueness(): {
         timbreScore: 90,
         pitchScore: 88,
         qualityScore: 87,
+      vocalCharacterScore: null,
       },
     }),
     aiContext
@@ -2244,6 +2251,7 @@ export function verifyStructuredComparisonUniqueness(): {
         timbreScore: 82,
         pitchScore: 78,
         qualityScore: 90,
+      vocalCharacterScore: null,
       },
     }),
     aiContext
@@ -2257,6 +2265,7 @@ export function verifyStructuredComparisonUniqueness(): {
         timbreScore: 52,
         pitchScore: 45,
         qualityScore: 55,
+      vocalCharacterScore: null,
       },
     }),
     aiContext
@@ -2309,6 +2318,7 @@ export function verifyFeatureTagUniqueness(): {
         timbreScore: 90,
         pitchScore: 88,
         qualityScore: 87,
+      vocalCharacterScore: null,
       },
     }),
     mockComparisonRow("real_voice_2.wav", {
@@ -2318,6 +2328,7 @@ export function verifyFeatureTagUniqueness(): {
         timbreScore: 82,
         pitchScore: 78,
         qualityScore: 90,
+      vocalCharacterScore: null,
       },
     }),
     mockComparisonRow("real_voice_3.wav", {
@@ -2327,6 +2338,7 @@ export function verifyFeatureTagUniqueness(): {
         timbreScore: 52,
         pitchScore: 45,
         qualityScore: 55,
+      vocalCharacterScore: null,
       },
     }),
   ];
@@ -2379,6 +2391,7 @@ export function verifyMatchDisplaySanity(): {
       timbreScore: 78,
       pitchScore: 70,
       qualityScore: 90,
+    vocalCharacterScore: null,
     },
   });
 
@@ -2389,6 +2402,7 @@ export function verifyMatchDisplaySanity(): {
       timbreScore: 82,
       pitchScore: 80,
       qualityScore: 85,
+    vocalCharacterScore: null,
     },
   });
 
@@ -2497,6 +2511,7 @@ export function verifyMatchFeatureTagFiltering(): {
       timbreScore: 85,
       pitchScore: 82,
       qualityScore: 90,
+    vocalCharacterScore: null,
     },
   });
 
@@ -2514,6 +2529,7 @@ export function verifyMatchFeatureTagFiltering(): {
       timbreScore: 72,
       pitchScore: 65,
       qualityScore: 80,
+    vocalCharacterScore: null,
     },
   });
 

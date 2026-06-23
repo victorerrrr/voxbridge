@@ -891,8 +891,7 @@ export function AiVoiceMatchingLab() {
                   {row.best_match_sec != null && (
                     <AdminActionButton
                       label={`▶ Best match ~${Math.round(row.best_match_sec)}s`}
-                      demoId={`best-${row.id}`}
-                      onClick={() => {
+                          onClick={() => {
                         togglePlayback(`demo-${row.id}`, row.demoAudioUrl, row.best_match_sec ?? 0);
                       }}
                     />
