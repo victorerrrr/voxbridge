@@ -240,10 +240,6 @@ export function updateAdminUser(id: string, patch: Partial<AdminUserRecord>): vo
   writeJson(ADMIN_USERS_KEY, overrides);
 }
 
-export function getAdminUsersByRole(role: AdminUserRecord["role"]): AdminUserRecord[] {
-  return getAdminUsers().filter((user) => user.role === role);
-}
-
 export function getAdminReports(): AdminReport[] {
   const overrides = readJson<Record<string, AdminReport>>(ADMIN_REPORTS_KEY, {});
   return MOCK_REPORTS.map((report) => overrides[report.id] ?? report);
