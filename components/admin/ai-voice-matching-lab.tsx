@@ -622,6 +622,41 @@ export function AiVoiceMatchingLab() {
         ))}
       </div>
 
+      <div className="mb-4">
+        <p className="text-xs text-white/60 uppercase tracking-wide mb-2">Voice style</p>
+        <div className="flex flex-wrap gap-2">
+          {([["any", "Any"], ["singing", "Singing"], ["rap", "Rap"]] as const).map(([val, label]) => {
+            const active = val === "any"
+              ? !(selectedQueryTags.genre && selectedQueryTags.genre.length > 0)
+              : (selectedQueryTags.genre || []).includes(val);
+            return (
+              <button
+                key={val}
+                type="button"
+                onClick={() => {
+                  setSelectedQueryTags((prev) => {
+                    const next = { ...prev };
+                    if (val === "any") {
+                      delete next.genre;
+                    } else {
+                      next.genre = [val];
+                    }
+                    return next;
+                  });
+                }}
+                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                  active
+                    ? "bg-orange-500/20 border-orange-500 text-orange-300"
+                    : "bg-white/5 border-white/10 text-white/60 hover:border-white/30"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <LabSection
         title="Vocalist Demos"
         description="Upload one or more demo files — only these files are sent to matching (not a server folder)."
