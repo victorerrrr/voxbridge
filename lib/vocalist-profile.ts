@@ -43,10 +43,6 @@ export const VOCAL_TYPE_OPTIONS = [
 
 export const VOCAL_REGISTER_OPTIONS = ["High", "Mid", "Low", "Wide"] as const;
 
-/** @deprecated Use VOCAL_TYPE_OPTIONS — kept for legacy profile migration */
-export const MALE_VOCAL_RANGES = ["Tenor", "Baritone", "Bass"] as const;
-/** @deprecated Use VOCAL_TYPE_OPTIONS */
-export const FEMALE_VOCAL_RANGES = ["Soprano", "Mezzo-soprano", "Alto", "Mezzo"] as const;
 
 export const MICROPHONE_PRESETS = [
   "Neumann U87",
@@ -269,9 +265,6 @@ export function subscribeVocalistProfiles(onStoreChange: () => void): () => void
   return () => listeners.delete(onStoreChange);
 }
 
-export function getVocalistProfiles(): VocalistProfile[] {
-  return syncSnapshot();
-}
 
 export function vocalistIdFromEmail(email: string): string {
   const slug = email

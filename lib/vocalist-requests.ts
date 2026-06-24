@@ -177,7 +177,7 @@ const MOCK_REQUESTS: Omit<VocalistRequest, "id" | "vocalistId" | "createdAt">[] 
   },
 ];
 
-export function seedMockRequestsIfNeeded(vocalistId: string): void {
+function seedMockRequestsIfNeeded(vocalistId: string): void {
   const existing = readRequests().filter((r) => r.vocalistId === vocalistId);
   if (existing.length > 0) return;
 
