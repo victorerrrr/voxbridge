@@ -111,8 +111,6 @@ export const MAX_DISPLAY_MATCH_PERCENT = 92;
 /** Vocal type mismatch (male vs female AI, etc.) — display cap; weak band (<50%). */
 export const VOCAL_TYPE_MISMATCH_MAX_PERCENT = 49;
 
-/** @deprecated All vocal-type mismatches use VOCAL_TYPE_MISMATCH_MAX_PERCENT (49). */
-export const HIGH_PITCHED_MALE_FEMALE_AI_MAX_PERCENT = 49;
 
 /** When % ≥70 but fewer than 2 matched bullets, reduce to this partial band. */
 export const MATCH_PERCENT_INSUFFICIENT_EVIDENCE_CAP = 65;
@@ -1311,10 +1309,6 @@ export function buildMatchComparisonSections(
   return { matched: matched.slice(0, 3), different, recordingQualityNote };
 }
 
-/** @deprecated Prefer featureTags chips + formatFeatureTagLabel in the lab UI. */
-export function formatBestMatchExplanation(reasons: string[]): string {
-  return formatFeatureTagsExplanation(normalizeFeatureTagIds(reasons));
-}
 
 /** Filename-only: real_voice_1.wav never top match; moved to list bottom. */
 export function applyRealVoice1Demotion(
@@ -2250,12 +2244,6 @@ export function verifyStructuredComparisonUniqueness(): {
   return { real_voice_1, real_voice_2, real_voice_3 };
 }
 
-/** @deprecated Use verifyStructuredComparisonUniqueness */
-export function verifyMatchComparisonExampleVoices(): ReturnType<
-  typeof verifyStructuredComparisonUniqueness
-> {
-  return verifyStructuredComparisonUniqueness();
-}
 
 /**
  * Dev check: mock real_voice_1/2/3 must produce distinct featureTags sets.
