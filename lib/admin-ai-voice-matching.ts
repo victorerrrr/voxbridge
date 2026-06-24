@@ -2127,41 +2127,6 @@ export function mapVoiceMatchResultsFromApi(
   return assignUniqueFeatureTagsToResults(displayFinalized, aiContext);
 }
 
-/** POST AI vocal + demos to the voice-matching service. */
-export async function runVoiceMatching(
-  aiVocalFile: File,
-  demos: VocalistDemoItem[],
-  selectedQueryTags: string[] = [],
-  genderOverride: string = "auto"
-): Promise<AiVoiceMatchResult[]> {
-  const queryTagsRecord: Record<string, string[]> | undefined =
-    selectedQueryTags.length > 0 ? { genre: selectedQueryTags } : undefined;
-  const { formData, demoInputs } = buildVoiceMatchFormData(aiVocalFile, demos, queryTagsRecord, genderOverride);
-  logFormDataPayload(aiVocalFile, demoInputs);
-  console.log("sending voice-match request");
-  console.log("[voice-match] POST", VOICE_MATCH_REQUEST_URL);
-
-  let response: Response;
-  try {
-    response = await fetch(VOICE_MATCH_REQUEST_URL, {
-      method: "POST",
-      body: formData,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Network request failed";
-    console.error("[voice-match] fetch failed:", err);
-    throw new Error(
-      `Voice match request failed (network/CORS?): ${message}. Target: ${VOICE_MATCH_REQUEST_URL}. If the browser console shows a CORS error, open the Next app at http://localhost:3000 or http://127.0.0.1:3000 (ports 3000–3002 are allowed).`
-    );
-  }
-
-  console.log("[voice-match] response status:", response.status);
-  const responseText = await response.text();
-  console.log("[voice-match] response body:", responseText.slice(0, 500));
-
-  return mapVoiceMatchResultsFromApi(responseText, response.status, demoInputs);
-}
 
 function mockComparisonRow(
   filename: string,

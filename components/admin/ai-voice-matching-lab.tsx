@@ -273,8 +273,6 @@ export function AiVoiceMatchingLab() {
   >({});
   const aiVocalInputRef = useRef<HTMLInputElement>(null);
   const demoUploadRef = useRef<HTMLInputElement>(null);
-  const aiAudioRef = useRef<HTMLAudioElement>(null);
-  const demoAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const { togglePlayback, stopPlayback, playButtonLabel } =
     useLabAudioPlayback();
   const aiVocalRef = useRef(aiVocal);
@@ -392,7 +390,7 @@ export function AiVoiceMatchingLab() {
         aiVocal.file,
         demos,
         selectedQueryTags,
-        undefined,
+        genderOverride,
         aiLanguage || undefined,
         partLanguage || undefined
       );
@@ -461,7 +459,7 @@ export function AiVoiceMatchingLab() {
     } finally {
       setIsProcessing(false);
     }
-  }, [aiVocal, demos, selectedQueryTags]);
+  }, [aiVocal, demos, selectedQueryTags, genderOverride, aiLanguage, partLanguage]);
 
   const playAiVocal = () => {
     if (!aiVocal?.objectUrl) return;
@@ -511,7 +509,6 @@ export function AiVoiceMatchingLab() {
         {aiVocal && (
           <div className="mt-4 space-y-2">
             <audio
-              ref={aiAudioRef}
               controls
               src={aiVocal.objectUrl}
               className="w-full max-w-md rounded-lg"
@@ -688,9 +685,6 @@ export function AiVoiceMatchingLab() {
                   <p className="font-medium text-white">{demo.name}</p>
                   <p className="truncate text-xs text-zinc-500">{demo.file?.name ?? demo.name}</p>
                   <audio
-                    ref={(el) => {
-                      demoAudioRefs.current[demo.id] = el;
-                    }}
                     controls
                     src={demo.audioUrl}
                     className="mt-2 w-full max-w-sm"
