@@ -18,7 +18,9 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<AdminDashboardStats | null>(null);
 
   useEffect(() => {
-    const sync = () => setStats(getAdminDashboardStats());
+    const sync = () => {
+      getAdminDashboardStats().then(setStats);
+    };
     sync();
     const unsubAdmin = subscribeAdminStore(sync);
     const unsubOrders = subscribeProducerOrders(sync);

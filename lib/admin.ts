@@ -206,8 +206,8 @@ function writeJson<T>(key: string, value: T): void {
   emit();
 }
 
-function accountToAdminUser(): AdminUserRecord | null {
-  const user = getStoredUser();
+async function accountToAdminUser(): Promise<AdminUserRecord | null> {
+  const user = await getStoredUser();
   if (!user?.isAuthenticated || user.email === "admin") return null;
   return {
     id: user.email.toLowerCase(),
@@ -219,9 +219,9 @@ function accountToAdminUser(): AdminUserRecord | null {
   };
 }
 
-export function getAdminUsers(): AdminUserRecord[] {
+export async function getAdminUsers(): Promise<AdminUserRecord[]> {
   const overrides = readJson<Record<string, Partial<AdminUserRecord>>>(ADMIN_USERS_KEY, {});
-  const stored = accountToAdminUser();
+  const stored = await accountToAdminUser();
   const base = [...MOCK_USERS];
   if (stored && !base.some((u) => u.id === stored.id)) {
     base.unshift({ ...stored, isMock: false });
@@ -277,8 +277,8 @@ export function updateModerationItem(id: string, status: ModerationItem["status"
   writeJson(ADMIN_MODERATION_KEY, queue);
 }
 
-export function getAdminDashboardStats(): AdminDashboardStats {
-  const users = getAdminUsers();
+export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
+  const users = await getAdminUsers();
   const orders = getProducerOrders();
   const requests = getVocalistRequests();
   const reviews = getVocalistReviews();

@@ -7,6 +7,8 @@ import {
   clearStoredUser,
   getStoredUser,
   saveStoredUser,
+  updateEmail,
+  updatePassword,
   updateStoredUser,
 } from "@/lib/auth";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
@@ -66,8 +68,8 @@ function DashboardContent() {
 
   const safeTab = tabs.includes(selectedTab) ? selectedTab : "overview";
 
-  const onLogout = () => {
-    clearStoredUser();
+  const onLogout = async () => {
+    await clearStoredUser();
     window.setTimeout(() => router.push("/"), 150);
   };
 
@@ -85,8 +87,9 @@ function DashboardContent() {
       isAdmin={isAdmin}
       onAdminRoleChange={() => {
         refresh();
-        const authUser = getStoredUser();
-        if (authUser) setUserState(authUser);
+        getStoredUser().then((authUser) => {
+          if (authUser) setUserState(authUser);
+        });
       }}
       activeItem={safeTab === "overview" ? "dashboard" : safeTab}
     >
@@ -190,8 +193,8 @@ function ProfileSection({ user, onUserChange }: { user: AuthUser; onUserChange: 
   const [externalLinks, setExternalLinks] = useState<ExternalLinks>(user.externalLinks ?? {});
   const [linksSaved, setLinksSaved] = useState(false);
 
-  const saveExternalLinks = () => {
-    const updated = updateStoredUser({ externalLinks });
+  const saveExternalLinks = async () => {
+    const updated = await updateStoredUser({ externalLinks });
     if (updated) {
       onUserChange(updated);
       setLinksSaved(true);
@@ -208,9 +211,10 @@ function ProfileSection({ user, onUserChange }: { user: AuthUser; onUserChange: 
     reader.onload = () => {
       const avatar = typeof reader.result === "string" ? reader.result : "";
       const updated = { ...user, avatar };
-      saveStoredUser(updated);
-      onUserChange(updated);
-      setIsUploading(false);
+      saveStoredUser(updated).then(() => {
+        onUserChange(updated);
+        setIsUploading(false);
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -272,22 +276,39 @@ function SettingsSection({
   const [form, setForm] = useState({
     username: user.username,
     email: user.email,
-    password: user.password ?? "",
+    password: "",
   });
+  const [settingsError, setSettingsError] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const onSave = (event: FormEvent<HTMLFormElement>) => {
+  const onSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSettingsError("");
 
     const updated = {
       ...user,
       username: form.username.trim(),
-      email: form.email.trim(),
-      password: form.password,
     };
+    await saveStoredUser(updated);
 
-    saveStoredUser(updated);
+    if (form.email.trim() !== user.email) {
+      const { error } = await updateEmail(form.email.trim());
+      if (error) {
+        setSettingsError(error);
+        return;
+      }
+    }
+
+    if (form.password.length > 0) {
+      const { error } = await updatePassword(form.password);
+      if (error) {
+        setSettingsError(error);
+        return;
+      }
+    }
+
     onUserChange(updated);
+    setForm((prev) => ({ ...prev, password: "" }));
     setSaved(true);
   };
 
@@ -336,7 +357,8 @@ function SettingsSection({
           </AnimatedButton>
         </div>
       </form>
-      {saved && <p className="text-sm text-emerald-300">Changes saved in localStorage.</p>}
+      {settingsError && <p className="text-sm text-rose-300">{settingsError}</p>}
+      {saved && <p className="text-sm text-emerald-300">Changes saved.</p>}
     </div>
   );
 }

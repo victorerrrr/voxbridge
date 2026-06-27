@@ -45,18 +45,32 @@ function SignupPageContent() {
     password: "",
   });
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const [error, setError] = useState("");
+  const [signupComplete, setSignupComplete] = useState(false);
 
-    registerStoredUser({
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+
+    const result = await registerStoredUser({
       email: form.email.trim(),
       username: form.username.trim(),
       role,
       password: form.password,
     });
 
-    const destination = role === "vocalist" ? "/vocalist/onboarding" : "/home";
-    window.setTimeout(() => router.push(destination), 150);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+
+    if (result.user && result.user.isAuthenticated) {
+      const destination = role === "vocalist" ? "/vocalist/onboarding" : "/home";
+      window.setTimeout(() => router.push(destination), 150);
+      return;
+    }
+
+    setSignupComplete(true);
   };
 
   return (
@@ -117,6 +131,12 @@ function SignupPageContent() {
             </div>
           </div>
 
+          {error && <p className="text-sm text-rose-300">{error}</p>}
+          {signupComplete && (
+            <p className="text-sm text-emerald-300">
+              Account created. Check your email to confirm your address before signing in.
+            </p>
+          )}
           <AnimatedButton
             type="submit"
             variant="primary"

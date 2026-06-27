@@ -65,8 +65,8 @@ function VocalistRequestDetailContent({ requestId }: { requestId: string }) {
     );
   }
 
-  const onAccept = () => {
-    const order = acceptVocalistRequest(request.id);
+  const onAccept = async () => {
+    const order = await acceptVocalistRequest(request.id);
     if (order) router.push(vocalistWorkspaceUrl(order.id));
   };
 

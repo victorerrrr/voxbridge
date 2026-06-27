@@ -192,14 +192,14 @@ function seedMockRequestsIfNeeded(vocalistId: string): void {
   writeRequests([...readRequests(), ...seeded]);
 }
 
-export function ensureVocalistRequestsSeeded(): void {
-  const user = getStoredUser();
+export async function ensureVocalistRequestsSeeded(): Promise<void> {
+  const user = await getStoredUser();
   if (!user || user.role !== "vocalist") return;
   seedMockRequestsIfNeeded(vocalistIdFromEmail(user.email));
 }
 
-function buildOrderFromRequest(request: VocalistRequest): ProducerOrder {
-  const user = getStoredUser();
+async function buildOrderFromRequest(request: VocalistRequest): Promise<ProducerOrder> {
+  const user = await getStoredUser();
   const vocalistName = user?.username ?? "Vocalist";
 
   return createProducerOrder(request.vocalistId, vocalistName, {
@@ -213,30 +213,25 @@ function buildOrderFromRequest(request: VocalistRequest): ProducerOrder {
   });
 }
 
-export function acceptVocalistRequest(requestId: string): ProducerOrder | null {
+export async function acceptVocalistRequest(requestId: string): Promise<ProducerOrder | null> {
   const requests = readRequests();
   const index = requests.findIndex((r) => r.id === requestId);
   if (index === -1) return null;
-
   const request = requests[index];
-
   if (request.status === "accepted") {
     if (request.orderId) {
       const existing = getOrderById(request.orderId);
       if (existing) return existing;
     }
-    const order = buildOrderFromRequest(request);
+    const order = await buildOrderFromRequest(request);
     requests[index] = { ...request, orderId: order.id };
     writeRequests(requests);
     return order;
   }
-
   if (request.status !== "pending") return null;
-
-  const order = buildOrderFromRequest(request);
+  const order = await buildOrderFromRequest(request);
   requests[index] = { ...request, status: "accepted", orderId: order.id };
   writeRequests(requests);
-
   return order;
 }
 
@@ -249,20 +244,17 @@ export function declineVocalistRequest(requestId: string): void {
   writeRequests(requests);
 }
 
-export function getActiveVocalistOrder(): ProducerOrder | undefined {
-  const user = getStoredUser();
+export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefined> {
+  const user = await getStoredUser();
   if (!user || user.role !== "vocalist") return undefined;
   const vocalistId = vocalistIdFromEmail(user.email);
-
   const acceptedRequests = syncSnapshot()
     .filter((r) => r.vocalistId === vocalistId && r.status === "accepted" && r.orderId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
   for (const request of acceptedRequests) {
     const linked = getOrderById(request.orderId!);
     if (linked && linked.status !== "completed") return linked;
   }
-
   return getProducerOrders().find(
     (order) => order.vocalistId === vocalistId && order.status !== "completed"
   );

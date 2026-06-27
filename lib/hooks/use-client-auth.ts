@@ -14,7 +14,6 @@ export type ClientAuthState = {
   user: AuthUser | null;
   role: UserRole;
   isAdmin: boolean;
-  /** Admin session without producer/vocalist preview override. */
   inAdminCenter: boolean;
   isAuthenticated: boolean;
   isReady: boolean;
@@ -29,8 +28,8 @@ const INITIAL: ClientAuthState = {
   isReady: false,
 };
 
-function readAuthState(): ClientAuthState {
-  const user = getStoredUser();
+async function readAuthState(): Promise<ClientAuthState> {
+  const user = await getStoredUser();
   if (!user?.isAuthenticated) {
     return { ...INITIAL, isReady: true };
   }
@@ -44,13 +43,18 @@ function readAuthState(): ClientAuthState {
   };
 }
 
-/** Auth from localStorage — stable on server and first client paint until after mount. */
 export function useClientAuth(): ClientAuthState & { refresh: () => void } {
   const [state, setState] = useState<ClientAuthState>(INITIAL);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    setState(readAuthState());
+    let cancelled = false;
+    readAuthState().then((next) => {
+      if (!cancelled) setState(next);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [revision]);
 
   const refresh = useCallback(() => setRevision((n) => n + 1), []);

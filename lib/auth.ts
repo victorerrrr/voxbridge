@@ -1,6 +1,7 @@
 "use client";
 
 import type { ExternalLinks } from "@/lib/external-links";
+import { supabase } from "@/lib/supabase-client";
 
 export type UserRole = "producer" | "vocalist";
 
@@ -8,262 +9,233 @@ export type UserRole = "producer" | "vocalist";
 export type StoredAccountRole = UserRole | "admin";
 
 export type AuthUser = {
+  id: string;
   email: string;
   username: string;
   role: StoredAccountRole;
   isAuthenticated: boolean;
-  password?: string;
   avatar?: string;
   externalLinks?: ExternalLinks;
 };
 
-type StoredAccount = Omit<AuthUser, "isAuthenticated">;
-
-type AuthStorageState = {
-  account: StoredAccount | null;
-  session: {
-    isAuthenticated: boolean;
-  };
-};
-
-const STORAGE_KEY = "voxbridge_auth_state";
-const LEGACY_STORAGE_KEY = "voxbridge_user";
 const ADMIN_ROLE_OVERRIDE_KEY = "voxbridge_admin_role_override";
 
-const ADMIN_EMAIL = "admin";
-const ADMIN_PASSWORD = "admin";
+// NOTE: there is no more hardcoded ADMIN_EMAIL/ADMIN_PASSWORD constant.
+// Admin status now comes from the `role` column on the `users` row in
+// Supabase (set manually for whichever account should be an admin), not
+// from a special-cased login/password pair. This is safer (no password
+// embedded in the codebase) but means: to make someone an admin, update
+// their row's `role` to 'admin' directly in the Supabase Table Editor or
+// via SQL — there is no signup flow that creates an admin account.
 
-const isUserRole = (value: unknown): value is UserRole => {
-  return value === "producer" || value === "vocalist";
+type DbUserRow = {
+  id: string;
+  email: string;
+  username: string;
+  role: StoredAccountRole;
+  avatar_url: string | null;
+  external_link_spotify: string | null;
+  external_link_soundcloud: string | null;
+  external_link_youtube: string | null;
+  external_link_instagram: string | null;
+  external_link_website: string | null;
 };
 
-const isStoredAccountRole = (value: unknown): value is StoredAccountRole => {
-  return isUserRole(value) || value === "admin";
-};
+function rowToAuthUser(row: DbUserRow, isAuthenticated: boolean): AuthUser {
+  const externalLinks: ExternalLinks = {};
+  if (row.external_link_spotify) externalLinks.spotify = row.external_link_spotify;
+  if (row.external_link_soundcloud) externalLinks.soundcloud = row.external_link_soundcloud;
+  if (row.external_link_youtube) externalLinks.youtube = row.external_link_youtube;
+  if (row.external_link_instagram) externalLinks.instagram = row.external_link_instagram;
+  if (row.external_link_website) externalLinks.website = row.external_link_website;
 
-const isStoredAccount = (value: unknown): value is StoredAccount => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<StoredAccount>;
-  return (
-    Boolean(candidate.email) &&
-    Boolean(candidate.username) &&
-    isStoredAccountRole(candidate.role)
-  );
-};
-
-const normalizeAccount = (account: StoredAccount): StoredAccount => ({
-  email: account.email.trim(),
-  username: account.username.trim(),
-  role: account.role,
-  password: account.password,
-  avatar: account.avatar,
-  externalLinks: account.externalLinks ?? {},
-});
-
-const toAuthUser = (account: StoredAccount, isAuthenticated: boolean): AuthUser => ({
-  ...account,
-  isAuthenticated,
-});
-
-const defaultState = (): AuthStorageState => ({
-  account: null,
-  session: {
-    isAuthenticated: false,
-  },
-});
-
-const parseLegacyUser = (): AuthUser | null => {
-  const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<AuthUser>;
-    if (!parsed.email || !parsed.username || !isStoredAccountRole(parsed.role)) return null;
-    return {
-      email: parsed.email,
-      username: parsed.username,
-      role: parsed.role,
-      isAuthenticated: parsed.isAuthenticated === true,
-      password: parsed.password,
-      avatar: parsed.avatar,
-    };
-  } catch {
-    return null;
-  }
-};
-
-const readAuthState = (): AuthStorageState => {
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    const legacy = parseLegacyUser();
-    if (!legacy) return defaultState();
-    const migratedState: AuthStorageState = {
-      account: normalizeAccount({
-        email: legacy.email,
-        username: legacy.username,
-        role: legacy.role,
-        password: legacy.password,
-        avatar: legacy.avatar,
-      }),
-      session: {
-        isAuthenticated: legacy.isAuthenticated === true,
-      },
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedState));
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return migratedState;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<AuthStorageState>;
-    const account = isStoredAccount(parsed.account) ? normalizeAccount(parsed.account) : null;
-    return {
-      account,
-      session: {
-        isAuthenticated: parsed.session?.isAuthenticated === true,
-      },
-    };
-  } catch {
-    return defaultState();
-  }
-};
-
-const writeAuthState = (state: AuthStorageState): void => {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-};
-
-export const getStoredUser = (): AuthUser | null => {
-  if (typeof window === "undefined") return null;
-  const state = readAuthState();
-  if (!state.account) return null;
-  return toAuthUser(state.account, state.session.isAuthenticated);
-};
-
-export const saveStoredUser = (user: AuthUser): void => {
-  if (typeof window === "undefined") return;
-  const nextState: AuthStorageState = {
-    account: normalizeAccount({
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      password: user.password,
-      avatar: user.avatar,
-      externalLinks: user.externalLinks,
-    }),
-    session: {
-      isAuthenticated: user.isAuthenticated === true,
-    },
+  return {
+    id: row.id,
+    email: row.email,
+    username: row.username,
+    role: row.role,
+    isAuthenticated,
+    avatar: row.avatar_url ?? undefined,
+    externalLinks,
   };
-  writeAuthState(nextState);
+}
+
+/**
+ * Current signed-in user, or null if not signed in.
+ * Reads the active Supabase session, then fetches the matching profile row
+ * from our `users` table (Supabase Auth only knows email/password — role,
+ * username, avatar, externalLinks all live in our own table).
+ */
+export const getStoredUser = async (): Promise<AuthUser | null> => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  if (!session) return null;
+
+  const { data: row, error } = await supabase
+    .from("users")
+    .select(
+      "id, email, username, role, avatar_url, external_link_spotify, external_link_soundcloud, external_link_youtube, external_link_instagram, external_link_website"
+    )
+    .eq("id", session.user.id)
+    .single();
+
+  if (error || !row) return null;
+  return rowToAuthUser(row as DbUserRow, true);
+};/**
+* Persist profile field changes (username, avatar, externalLinks) for the
+* CURRENTLY signed-in user. Does not touch email/password — those go
+* through Supabase Auth's own update methods if ever needed.
+*/
+export const saveStoredUser = async (user: AuthUser): Promise<void> => {
+ await supabase
+   .from("users")
+   .update({
+     username: user.username,
+     avatar_url: user.avatar ?? null,
+     external_link_spotify: user.externalLinks?.spotify ?? null,
+     external_link_soundcloud: user.externalLinks?.soundcloud ?? null,
+     external_link_youtube: user.externalLinks?.youtube ?? null,
+     external_link_instagram: user.externalLinks?.instagram ?? null,
+     external_link_website: user.externalLinks?.website ?? null,
+   })
+   .eq("id", user.id);
 };
 
-export const clearStoredUser = (): void => {
-  if (typeof window === "undefined") return;
-  const state = readAuthState();
-  if (!state.account) return;
-  writeAuthState({
-    ...state,
-    session: {
-      isAuthenticated: false,
-    },
-  });
+export const updateStoredUser = async (
+ patch: Partial<AuthUser>
+): Promise<AuthUser | null> => {
+ const current = await getStoredUser();
+ if (!current) return null;
+
+ const updated: AuthUser = { ...current, ...patch };
+ await saveStoredUser(updated);
+ return updated;
 };
 
-export const updateStoredUser = (patch: Partial<AuthUser>): AuthUser | null => {
-  const current = getStoredUser();
-  if (!current) return null;
-
-  const updated = { ...current, ...patch };
-  saveStoredUser(updated);
-  return updated;
+export const clearStoredUser = async (): Promise<void> => {
+ await supabase.auth.signOut();
 };
 
-export const registerStoredUser = (user: Omit<AuthUser, "isAuthenticated">): AuthUser => {
-  const nextUser: AuthUser = {
-    ...normalizeAccount(user),
-    isAuthenticated: true,
-  };
-  saveStoredUser(nextUser);
-  return nextUser;
+/**
+* Sign up a new user: creates the Supabase Auth account (email/password),
+* then inserts the matching profile row into our `users` table with the
+* SAME id (auth.users.id), since users.id references auth.users(id).
+*
+* NOTE: if "Confirm email" is enabled in Supabase Auth settings (it is by
+* default), the user will need to click a confirmation link before they
+* can sign in — signUp succeeding here does NOT mean they're immediately
+* logged in.
+*/
+export const registerStoredUser = async (
+ user: Omit<AuthUser, "id" | "isAuthenticated"> & { password: string }
+): Promise<{ user: AuthUser | null; error: string | null }> => {
+ const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+   email: user.email.trim(),
+   password: user.password,
+ });
+
+ if (signUpError) {
+   return { user: null, error: signUpError.message };
+ }
+ if (!signUpData.user) {
+   return { user: null, error: "Sign up did not return a user." };
+ }
+
+ const { error: insertError } = await supabase.from("users").insert({
+   id: signUpData.user.id,
+   email: user.email.trim(),
+   username: user.username.trim(),
+   role: user.role,
+ });
+
+ if (insertError) {
+   return { user: null, error: insertError.message };
+ }
+
+ return {
+   user: {
+     id: signUpData.user.id,
+     email: user.email.trim(),
+     username: user.username.trim(),
+     role: user.role,
+     isAuthenticated: Boolean(signUpData.session),
+   },
+   error: null,
+ };
+};/**
+* Sign in by email + password. Username-based login is intentionally not
+* supported (matches standard Supabase Auth behavior and modern practice —
+* username is a display field, not a login credential).
+*/
+export const loginStoredUser = async (
+ email: string,
+ password: string
+): Promise<{ user: AuthUser | null; error: "invalid_credentials" | "unknown" | null }> => {
+ const { data, error } = await supabase.auth.signInWithPassword({
+   email: email.trim(),
+   password,
+ });
+
+ if (error || !data.user) {
+   return { user: null, error: "invalid_credentials" };
+ }
+
+ const { data: row, error: rowError } = await supabase
+   .from("users")
+   .select(
+     "id, email, username, role, avatar_url, external_link_spotify, external_link_soundcloud, external_link_youtube, external_link_instagram, external_link_website"
+   )
+   .eq("id", data.user.id)
+   .single();
+
+ if (rowError || !row) {
+   return { user: null, error: "unknown" };
+ }
+
+ return { user: rowToAuthUser(row as DbUserRow, true), error: null };
 };
 
 export const isAdminAccount = (user: AuthUser | null | undefined): boolean => {
-  if (!user) return false;
-  return user.email.trim().toLowerCase() === ADMIN_EMAIL;
+ return user?.role === "admin";
 };
 
 export const getAdminRoleOverride = (): UserRole | null => {
-  if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem(ADMIN_ROLE_OVERRIDE_KEY);
-  return stored === "producer" || stored === "vocalist" ? stored : null;
+ if (typeof window === "undefined") return null;
+ const stored = window.localStorage.getItem(ADMIN_ROLE_OVERRIDE_KEY);
+ return stored === "producer" || stored === "vocalist" ? stored : null;
 };
 
 export const setAdminRoleOverride = (role: UserRole): void => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ADMIN_ROLE_OVERRIDE_KEY, role);
+ if (typeof window === "undefined") return;
+ window.localStorage.setItem(ADMIN_ROLE_OVERRIDE_KEY, role);
 };
 
 export const clearAdminRoleOverride = (): void => {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ADMIN_ROLE_OVERRIDE_KEY);
+ if (typeof window === "undefined") return;
+ window.localStorage.removeItem(ADMIN_ROLE_OVERRIDE_KEY);
 };
 
 /** Admin logged in without producer/vocalist preview override. */
 export const isInAdminCenter = (user: AuthUser | null | undefined): boolean => {
-  if (!isAdminAccount(user)) return false;
-  return getAdminRoleOverride() === null;
+ if (!isAdminAccount(user)) return false;
+ return getAdminRoleOverride() === null;
 };
 
 export const getEffectiveRole = (user: AuthUser | null | undefined): UserRole => {
-  if (!user) return "producer";
-  if (isAdminAccount(user)) {
-    const override = getAdminRoleOverride();
-    if (override) return override;
-    return "producer";
-  }
-  if (isUserRole(user.role)) return user.role;
-  return "producer";
+ if (!user) return "producer";
+ if (isAdminAccount(user)) {
+   const override = getAdminRoleOverride();
+   if (override) return override;
+   return "producer";
+ }
+ if (user.role === "producer" || user.role === "vocalist") return user.role;
+ return "producer";
+};export const updateEmail = async (newEmail: string): Promise<{ error: string | null }> => {
+  const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+  return { error: error?.message ?? null };
 };
 
-const loginAsAdmin = (): AuthUser => {
-  clearAdminRoleOverride();
-  const adminUser: AuthUser = {
-    email: ADMIN_EMAIL,
-    username: "Admin",
-    role: "admin",
-    password: ADMIN_PASSWORD,
-    isAuthenticated: true,
-  };
-  saveStoredUser(adminUser);
-  window.localStorage.setItem("voxbridge_admin_mode", "true");
-  return adminUser;
-};
-
-export const loginStoredUser = (
-  identifier: string,
-  password: string
-): { user: AuthUser | null; error: "account_not_found" | "invalid_credentials" | null } => {
-  if (typeof window === "undefined") return { user: null, error: "account_not_found" };
-
-  const normalizedIdentifier = identifier.trim().toLowerCase();
-  if (normalizedIdentifier === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-    return { user: loginAsAdmin(), error: null };
-  }
-
-  const state = readAuthState();
-  if (!state.account) return { user: null, error: "account_not_found" };
-
-  const normalizedEmail = state.account.email.toLowerCase();
-  const normalizedUsername = state.account.username.toLowerCase();
-  const matchesIdentifier =
-    normalizedIdentifier === normalizedEmail || normalizedIdentifier === normalizedUsername;
-  const matchesPassword = Boolean(state.account.password) && state.account.password === password;
-
-  if (!matchesIdentifier || !matchesPassword) {
-    return { user: null, error: "invalid_credentials" };
-  }
-
-  const authenticatedUser = toAuthUser(state.account, true);
-  saveStoredUser(authenticatedUser);
-  return { user: authenticatedUser, error: null };
+export const updatePassword = async (newPassword: string): Promise<{ error: string | null }> => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  return { error: error?.message ?? null };
 };

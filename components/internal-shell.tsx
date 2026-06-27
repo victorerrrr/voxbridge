@@ -210,20 +210,26 @@ export default function InternalShell({
       setVocalistNav(vocalistNavFallback);
       return;
     }
-    const user = getStoredUser();
-    if (!user) {
-      setVocalistNav(vocalistNavFallback);
-      return;
-    }
-    const vocalistId = vocalistIdFromEmail(user.email);
-    const activeOrders = getOrdersForVocalist(vocalistId).filter((order) =>
-      isHomeActiveOrderStatus(order.status)
-    );
-    setVocalistNav({
-      workspaceHref:
-        activeOrders.length === 1 ? vocalistWorkspaceUrl(activeOrders[0].id) : null,
-      profileHref: `/vocalists/${vocalistId}`,
+    let cancelled = false;
+    getStoredUser().then((user) => {
+      if (cancelled) return;
+      if (!user) {
+        setVocalistNav(vocalistNavFallback);
+        return;
+      }
+      const vocalistId = vocalistIdFromEmail(user.email);
+      const activeOrders = getOrdersForVocalist(vocalistId).filter((order) =>
+        isHomeActiveOrderStatus(order.status)
+      );
+      setVocalistNav({
+        workspaceHref:
+          activeOrders.length === 1 ? vocalistWorkspaceUrl(activeOrders[0].id) : null,
+        profileHref: `/vocalists/${vocalistId}`,
+      });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [role]);
 
   const { workspaceHref, profileHref } =
@@ -236,9 +242,9 @@ export default function InternalShell({
     return buildVocalistGroups(workspaceHref, profileHref);
   }, [role, workspaceHref, profileHref]);
 
-  const onLogout = () => {
+  const onLogout = async () => {
     closeMobileSidebar();
-    clearStoredUser();
+    await clearStoredUser();
     window.setTimeout(() => router.push("/"), 150);
   };
 

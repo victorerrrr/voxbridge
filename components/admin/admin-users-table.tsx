@@ -24,8 +24,9 @@ export function AdminUsersTable({ roleFilter }: AdminUsersTableProps) {
 
   useEffect(() => {
     const sync = () => {
-      const list = getAdminUsers();
-      setUsers(roleFilter ? list.filter((u) => u.role === roleFilter) : list);
+      getAdminUsers().then((list) => {
+        setUsers(roleFilter ? list.filter((u) => u.role === roleFilter) : list);
+      });
     };
     sync();
     return subscribeAdminStore(sync);

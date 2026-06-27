@@ -13,20 +13,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError("");
 
-    const result = loginStoredUser(identifier, password);
-    if (result.error === "account_not_found") {
-      setError("No account found. Create account first or sign up again for this frontend demo.");
-      return;
-    }
+    const result = await loginStoredUser(identifier, password);
     if (result.error === "invalid_credentials") {
-      setError("Invalid credentials.");
+      setError("Invalid email or password.");
+      return;
+    }
+    if (result.error === "unknown" || !result.user) {
+      setError("Something went wrong. Please try again.");
       return;
     }
 
-    const destination = result.user && isAdminAccount(result.user) ? "/admin" : "/home";
+    const destination = isAdminAccount(result.user) ? "/admin" : "/home";
     window.setTimeout(() => router.push(destination), 150);
   };
 
@@ -45,7 +46,7 @@ export default function LoginPage() {
             type="text"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
-            placeholder="Email or username"
+            placeholder="Email"
             className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none ring-purple-500/50 placeholder:text-zinc-500 focus:ring-2"
           />
           <PasswordInput

@@ -72,8 +72,9 @@ function VocalistOrdersContent() {
                 key={request.id}
                 request={request}
                 onAccept={() => {
-                  const order = acceptVocalistRequest(request.id);
-                  if (order) router.push(vocalistWorkspaceUrl(order.id));
+                  acceptVocalistRequest(request.id).then((order) => {
+                    if (order) router.push(vocalistWorkspaceUrl(order.id));
+                  });
                 }}
                 onDecline={() => declineVocalistRequest(request.id)}
               />

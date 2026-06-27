@@ -12,7 +12,7 @@ import { getActiveVocalistOrder, ensureVocalistRequestsSeeded } from "@/lib/voca
 import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
 import { getOrdersForVocalist, type ProducerOrder } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type HomeActiveProjectsStripProps = {
   role: UserRole;
@@ -22,10 +22,25 @@ type HomeActiveProjectsStripProps = {
 
 export function useHomeActiveProjects(role: UserRole, email: string) {
   const producerOrders = useProducerOrders();
+  const [fallbackOrder, setFallbackOrder] = useState<ProducerOrder | null>(null);
 
   useEffect(() => {
     if (role === "vocalist") ensureVocalistRequestsSeeded();
   }, [role]);
+
+  useEffect(() => {
+    if (role !== "vocalist") {
+      setFallbackOrder(null);
+      return;
+    }
+    let cancelled = false;
+    getActiveVocalistOrder().then((order) => {
+      if (!cancelled) setFallbackOrder(order ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, email]);
 
   return useMemo(() => {
     if (role === "producer") {
@@ -36,9 +51,8 @@ export function useHomeActiveProjects(role: UserRole, email: string) {
       isHomeActiveOrderStatus(order.status)
     );
     if (fromVocalist.length > 0) return fromVocalist;
-    const active = getActiveVocalistOrder();
-    return active ? [active] : [];
-  }, [role, email, producerOrders]);
+    return fallbackOrder ? [fallbackOrder] : [];
+  }, [role, email, producerOrders, fallbackOrder]);
 }
 
 function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string {
