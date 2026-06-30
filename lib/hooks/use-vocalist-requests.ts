@@ -25,7 +25,9 @@ export function useVocalistRequestsForVocalist(
       return;
     }
     const parsedStatuses = statusKey.split(",") as VocalistRequestStatus[];
-    const sync = () => setRequests([...getRequestsForVocalist(vocalistId, parsedStatuses)]);
+    const sync = () => {
+      getRequestsForVocalist(vocalistId, parsedStatuses).then((list) => setRequests([...list]));
+    };
     queueMicrotask(sync);
     return subscribeVocalistRequests(sync);
   }, [vocalistId, statusKey]);
@@ -41,7 +43,9 @@ export function usePendingVocalistRequests(vocalistId: string): VocalistRequest[
       queueMicrotask(() => setPending(EMPTY));
       return;
     }
-    const sync = () => setPending([...getPendingRequestsForVocalist(vocalistId)]);
+    const sync = () => {
+      getPendingRequestsForVocalist(vocalistId).then((list) => setPending([...list]));
+    };
     queueMicrotask(sync);
     return subscribeVocalistRequests(sync);
   }, [vocalistId]);
@@ -53,7 +57,7 @@ export function useVocalistRequest(requestId: string): VocalistRequest | undefin
   const [request, setRequest] = useState<VocalistRequest | undefined>(undefined);
 
   const sync = useCallback(() => {
-    setRequest(getVocalistRequestById(requestId));
+    getVocalistRequestById(requestId).then(setRequest);
   }, [requestId]);
 
   useEffect(() => {

@@ -26,7 +26,6 @@ import { HomeLandingHero } from "@/components/home/home-landing-hero";
 import { HomeTransformationDemo } from "@/components/home/home-transformation-demo";
 import { HomeFeaturedVocalists } from "@/components/home/home-featured-vocalists";
 import { HomeTransformationsFeed } from "@/components/home/home-transformations-feed";
-import { ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
 import { usePendingVocalistRequests } from "@/lib/hooks/use-vocalist-requests";
 import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 
@@ -70,9 +69,6 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
     }
   }, [filteredTracks, selectedId]);
 
-  useEffect(() => {
-    if (user.role === "vocalist") ensureVocalistRequestsSeeded();
-  }, [user.role]);
   const [vocalistId, setVocalistId] = useState<string>("");
   useEffect(() => {
     if (user.role !== "vocalist") {

@@ -12,7 +12,6 @@ import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import {
   acceptVocalistRequest,
   declineVocalistRequest,
-  ensureVocalistRequestsSeeded,
   vocalistRequestStatusLabel,
   type VocalistRequest,
 } from "@/lib/vocalist-requests";
@@ -53,7 +52,6 @@ function VocalistRequestDetailContent({ requestId }: { requestId: string }) {
       router.replace("/signup?role=vocalist");
       return;
     }
-    ensureVocalistRequestsSeeded();
   }, [router, user, isReady]);
 
   useEffect(() => {

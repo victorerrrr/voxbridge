@@ -8,7 +8,7 @@ import {
 } from "@/components/home/home-order-status";
 import { useProducerOrders } from "@/lib/hooks/use-producer-orders";
 import type { UserRole } from "@/lib/auth";
-import { getActiveVocalistOrder, ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
+import { getActiveVocalistOrder } from "@/lib/vocalist-requests";
 import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import { getOrdersForVocalist, type ProducerOrder } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
@@ -25,9 +25,6 @@ export function useHomeActiveProjects(role: UserRole, userId: string) {
   const [fallbackOrder, setFallbackOrder] = useState<ProducerOrder | null>(null);
   const [vocalistId, setVocalistId] = useState<string>("");
   const [vocalistOrders, setVocalistOrders] = useState<ProducerOrder[]>([]);
-  useEffect(() => {
-    if (role === "vocalist") ensureVocalistRequestsSeeded();
-  }, [role]);
   useEffect(() => {
     if (role !== "vocalist") {
       setFallbackOrder(null);

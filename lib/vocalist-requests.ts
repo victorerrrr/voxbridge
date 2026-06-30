@@ -3,8 +3,7 @@
 import { getStoredUser } from "@/lib/auth";
 import { createProducerOrder, getOrderById, getProducerOrders, type ProducerOrder } from "@/lib/orders";
 import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
-
-const STORAGE_KEY = "voxbridge_vocalist_requests";
+import { supabase } from "@/lib/supabase-client";
 
 export type VocalistRequestStatus = "pending" | "accepted" | "declined";
 
@@ -16,6 +15,7 @@ export type VocalistRequestReferenceLink = {
 export type VocalistRequest = {
   id: string;
   vocalistId: string;
+  producerId: string;
   projectName: string;
   description: string;
   brief: string;
@@ -34,76 +34,10 @@ export type VocalistRequest = {
   deadline: string;
 };
 
-const EMPTY_REQUESTS: VocalistRequest[] = [];
-
 const listeners = new Set<() => void>();
-
-let cachedRaw: string | null | undefined;
-let cachedSnapshot: VocalistRequest[] = EMPTY_REQUESTS;
 
 function emitChange(): void {
   listeners.forEach((listener) => listener());
-}
-
-function normalizeRequest(raw: Partial<VocalistRequest> & Pick<VocalistRequest, "id" | "vocalistId" | "projectName" | "status" | "createdAt">): VocalistRequest {
-  return {
-    id: raw.id,
-    vocalistId: raw.vocalistId,
-    projectName: raw.projectName,
-    description: raw.description ?? "",
-    brief: raw.brief ?? raw.description ?? "",
-    reference: raw.reference ?? "",
-    budget: raw.budget ?? 0,
-    producerName: raw.producerName ?? "Producer",
-    status: raw.status,
-    createdAt: raw.createdAt,
-    orderId: raw.orderId,
-    genreTags: raw.genreTags ?? [],
-    moodTags: raw.moodTags ?? [],
-    voiceTags: raw.voiceTags ?? [],
-    bpm: raw.bpm ?? "",
-    musicalKey: raw.musicalKey ?? "",
-    referenceLinks: raw.referenceLinks ?? [],
-    deadline: raw.deadline ?? "",
-  };
-}
-
-function syncSnapshot(): VocalistRequest[] {
-  if (typeof window === "undefined") return EMPTY_REQUESTS;
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === cachedRaw) return cachedSnapshot;
-
-  cachedRaw = raw;
-  if (!raw) {
-    cachedSnapshot = EMPTY_REQUESTS;
-    return cachedSnapshot;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<VocalistRequest>[];
-    cachedSnapshot = Array.isArray(parsed)
-      ? parsed.map((item) => normalizeRequest(item as VocalistRequest))
-      : EMPTY_REQUESTS;
-  } catch {
-    cachedSnapshot = EMPTY_REQUESTS;
-  }
-
-  return cachedSnapshot;
-}
-
-function readRequests(): VocalistRequest[] {
-  return [...syncSnapshot()];
-}
-
-function writeRequests(requests: VocalistRequest[]): void {
-  if (typeof window === "undefined") return;
-
-  const raw = JSON.stringify(requests);
-  window.localStorage.setItem(STORAGE_KEY, raw);
-  cachedRaw = raw;
-  cachedSnapshot = requests;
-  emitChange();
 }
 
 export function subscribeVocalistRequests(onStoreChange: () => void): () => void {
@@ -111,99 +45,148 @@ export function subscribeVocalistRequests(onStoreChange: () => void): () => void
   return () => listeners.delete(onStoreChange);
 }
 
-export function getVocalistRequests(): VocalistRequest[] {
-  return syncSnapshot();
+type DbRequestRow = {
+  id: string;
+  vocalist_profile_id: string;
+  producer_id: string;
+  project_name: string;
+  description: string;
+  brief: string;
+  reference: string;
+  budget: number;
+  status: VocalistRequestStatus;
+  genre_tags: string[];
+  mood_tags: string[];
+  voice_tags: string[];
+  bpm: string;
+  musical_key: string;
+  reference_links: VocalistRequestReferenceLink[];
+  deadline: string | null;
+  order_id: string | null;
+  created_at: string;
+  users?: { username: string } | null;
+};
+
+const REQUEST_SELECT = "*, users!vocalist_requests_producer_id_fkey(username)";
+
+function rowToRequest(row: DbRequestRow): VocalistRequest {
+  return {
+    id: row.id,
+    vocalistId: row.vocalist_profile_id,
+    producerId: row.producer_id,
+    projectName: row.project_name,
+    description: row.description,
+    brief: row.brief,
+    reference: row.reference,
+    budget: row.budget,
+    producerName: row.users?.username ?? "Producer",
+    status: row.status,
+    createdAt: row.created_at,
+    orderId: row.order_id ?? undefined,
+    genreTags: row.genre_tags ?? [],
+    moodTags: row.mood_tags ?? [],
+    voiceTags: row.voice_tags ?? [],
+    bpm: row.bpm,
+    musicalKey: row.musical_key,
+    referenceLinks: row.reference_links ?? [],
+    deadline: row.deadline ?? "",
+  };
 }
 
-export function getVocalistRequestById(requestId: string): VocalistRequest | undefined {
-  return syncSnapshot().find((request) => request.id === requestId);
+export async function getVocalistRequests(): Promise<VocalistRequest[]> {
+  const user = await getStoredUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("vocalist_requests")
+    .select(REQUEST_SELECT)
+    .eq("producer_id", user.id)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map((row) => rowToRequest(row as unknown as DbRequestRow));
 }
 
-export function getRequestsForVocalist(
+export async function getVocalistRequestById(requestId: string): Promise<VocalistRequest | undefined> {
+  const { data, error } = await supabase
+    .from("vocalist_requests")
+    .select(REQUEST_SELECT)
+    .eq("id", requestId)
+    .single();
+  if (error || !data) return undefined;
+  return rowToRequest(data as unknown as DbRequestRow);
+}
+
+export async function getRequestsForVocalist(
   vocalistId: string,
   statuses?: VocalistRequestStatus[]
-): VocalistRequest[] {
+): Promise<VocalistRequest[]> {
   const allowed = statuses ?? ["pending", "accepted", "declined"];
-  return syncSnapshot()
-    .filter((request) => request.vocalistId === vocalistId && allowed.includes(request.status))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const { data } = await supabase
+    .from("vocalist_requests")
+    .select(REQUEST_SELECT)
+    .eq("vocalist_profile_id", vocalistId)
+    .in("status", allowed)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map((row) => rowToRequest(row as unknown as DbRequestRow));
 }
 
-export function getPendingRequestsForVocalist(vocalistId: string): VocalistRequest[] {
+export async function getPendingRequestsForVocalist(vocalistId: string): Promise<VocalistRequest[]> {
   return getRequestsForVocalist(vocalistId, ["pending"]);
 }
 
-function createRequestId(): string {
-  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
+export type CreateVocalistRequestOptions = {
+  projectName: string;
+  description?: string;
+  brief?: string;
+  reference?: string;
+  budget?: number;
+  genreTags?: string[];
+  moodTags?: string[];
+  voiceTags?: string[];
+  bpm?: string;
+  musicalKey?: string;
+  referenceLinks?: VocalistRequestReferenceLink[];
+  deadline?: string;
+};
 
-const MOCK_REQUESTS: Omit<VocalistRequest, "id" | "vocalistId" | "createdAt">[] = [
-  {
-    projectName: "Midnight Drive",
-    description: "Need a husky male topline for an afro-house drop. 8-bar hook + ad-libs.",
-    brief:
-      "Match the AI reference energy in the hook. Keep the delivery intimate on the verse, then open up on the drop. Light doubles on the last 4 bars.",
-    reference: "ai-reference-midnight.mp3",
-    budget: 220,
-    producerName: "Kai Beats",
-    status: "pending",
-    genreTags: ["Afro House", "Melodic House"],
-    moodTags: ["Euphoric", "Dark"],
-    voiceTags: ["Husky", "Male", "Topline"],
-    bpm: "124",
-    musicalKey: "F# minor",
-    referenceLinks: [
-      { label: "Suno preview", url: "https://suno.com/mock/midnight-drive" },
-      { label: "Spotify ref", url: "https://open.spotify.com/track/mock-midnight" },
-    ],
-    deadline: "May 28, 2026",
-  },
-  {
-    projectName: "Neon Tears",
-    description: "Emotional cinematic vocal for indie electronic bridge section.",
-    brief:
-      "Cinematic, breathy tone for a bridge lift. Producer wants a vulnerable first pass, then a fuller stacked chorus double.",
-    reference: "neon-tears-demo.wav",
-    budget: 180,
-    producerName: "Lena Wave",
-    status: "pending",
-    genreTags: ["Indie", "Cinematic"],
-    moodTags: ["Emotional", "Dreamy"],
-    voiceTags: ["Breathy", "Female", "Falsetto"],
-    bpm: "92",
-    musicalKey: "D major",
-    referenceLinks: [{ label: "YouTube sketch", url: "https://youtube.com/watch?v=mock-neon-tears" }],
-    deadline: "Jun 2, 2026",
-  },
-];
-
-function seedMockRequestsIfNeeded(vocalistId: string): void {
-  const existing = readRequests().filter((r) => r.vocalistId === vocalistId);
-  if (existing.length > 0) return;
-
-  const now = new Date().toISOString();
-  const seeded = MOCK_REQUESTS.map((item) => ({
-    ...item,
-    id: createRequestId(),
-    vocalistId,
-    createdAt: now,
-  }));
-
-  writeRequests([...readRequests(), ...seeded]);
-}
-
-export async function ensureVocalistRequestsSeeded(): Promise<void> {
+export async function createVocalistRequest(
+  vocalistId: string,
+  options: CreateVocalistRequestOptions
+): Promise<VocalistRequest> {
   const user = await getStoredUser();
-  if (!user || user.role !== "vocalist") return;
-  const profile = await getVocalistProfileByOwnerId(user.id);
-  if (!profile) return;
-  seedMockRequestsIfNeeded(profile.id);
+  if (!user) {
+    throw new Error("Cannot send a request without a signed-in producer.");
+  }
+  const { data, error } = await supabase
+    .from("vocalist_requests")
+    .insert({
+      vocalist_profile_id: vocalistId,
+      producer_id: user.id,
+      project_name: options.projectName,
+      description: options.description ?? "",
+      brief: options.brief ?? options.description ?? "",
+      reference: options.reference ?? "",
+      budget: options.budget ?? 0,
+      status: "pending",
+      genre_tags: options.genreTags ?? [],
+      mood_tags: options.moodTags ?? [],
+      voice_tags: options.voiceTags ?? [],
+      bpm: options.bpm ?? "",
+      musical_key: options.musicalKey ?? "",
+      reference_links: options.referenceLinks ?? [],
+      deadline: options.deadline ?? null,
+    })
+    .select(REQUEST_SELECT)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to create vocalist request.");
+  }
+  emitChange();
+  return rowToRequest(data as unknown as DbRequestRow);
 }
 
 async function buildOrderFromRequest(request: VocalistRequest): Promise<ProducerOrder> {
   const user = await getStoredUser();
   const vocalistName = user?.username ?? "Vocalist";
-
   return createProducerOrder(request.vocalistId, vocalistName, {
     projectName: request.projectName,
     description: request.description,
@@ -215,34 +198,38 @@ async function buildOrderFromRequest(request: VocalistRequest): Promise<Producer
 }
 
 export async function acceptVocalistRequest(requestId: string): Promise<ProducerOrder | null> {
-  const requests = readRequests();
-  const index = requests.findIndex((r) => r.id === requestId);
-  if (index === -1) return null;
-  const request = requests[index];
+  const request = await getVocalistRequestById(requestId);
+  if (!request) return null;
+
   if (request.status === "accepted") {
     if (request.orderId) {
       const existing = await getOrderById(request.orderId);
       if (existing) return existing;
     }
     const order = await buildOrderFromRequest(request);
-    requests[index] = { ...request, orderId: order.id };
-    writeRequests(requests);
+    await supabase.from("vocalist_requests").update({ order_id: order.id }).eq("id", requestId);
+    emitChange();
     return order;
   }
+
   if (request.status !== "pending") return null;
+
   const order = await buildOrderFromRequest(request);
-  requests[index] = { ...request, status: "accepted", orderId: order.id };
-  writeRequests(requests);
+  await supabase
+    .from("vocalist_requests")
+    .update({ status: "accepted", order_id: order.id })
+    .eq("id", requestId);
+  emitChange();
   return order;
 }
 
-export function declineVocalistRequest(requestId: string): void {
-  const requests = readRequests();
-  const index = requests.findIndex((r) => r.id === requestId);
-  if (index === -1) return;
-  if (requests[index].status === "declined") return;
-  requests[index] = { ...requests[index], status: "declined" };
-  writeRequests(requests);
+export async function declineVocalistRequest(requestId: string): Promise<void> {
+  await supabase
+    .from("vocalist_requests")
+    .update({ status: "declined" })
+    .eq("id", requestId)
+    .eq("status", "pending");
+  emitChange();
 }
 
 export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefined> {
@@ -251,13 +238,17 @@ export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefine
   const profile = await getVocalistProfileByOwnerId(user.id);
   if (!profile) return undefined;
   const vocalistId = profile.id;
-  const acceptedRequests = syncSnapshot()
-    .filter((r) => r.vocalistId === vocalistId && r.status === "accepted" && r.orderId)
+
+  const acceptedRequests = await getRequestsForVocalist(vocalistId, ["accepted"]);
+  const withOrder = acceptedRequests
+    .filter((r) => r.orderId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  for (const request of acceptedRequests) {
+
+  for (const request of withOrder) {
     const linked = await getOrderById(request.orderId!);
     if (linked && linked.status !== "completed") return linked;
   }
+
   const allOrders = await getProducerOrders();
   return allOrders.find(
     (order) => order.vocalistId === vocalistId && order.status !== "completed"

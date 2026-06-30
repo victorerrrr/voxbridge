@@ -17,7 +17,6 @@ import {
   type VocalistProfile,
   type VocalistTags,
 } from "@/lib/vocalist-profile";
-import { ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
 import { useVocalistGuard } from "@/lib/use-vocalist-guard";
 import type { AuthUser } from "@/lib/auth";
 
@@ -135,7 +134,6 @@ function VocalistTagsForm({ user, profile }: { user: AuthUser; profile: Vocalist
     }
 
     setVocalistTags(user.id, finalTags);
-    ensureVocalistRequestsSeeded();
     router.push("/home");
   };
 

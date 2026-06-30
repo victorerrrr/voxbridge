@@ -280,7 +280,7 @@ export function updateModerationItem(id: string, status: ModerationItem["status"
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const users = await getAdminUsers();
   const orders = await getProducerOrders();
-  const requests = getVocalistRequests();
+  const requests = await getVocalistRequests();
   const reviews = getVocalistReviews();
   const reports = getAdminReports().filter((r) => r.status === "open");
   const conversations = getAdminConversations();

@@ -25,7 +25,8 @@ async function computeStats(role: UserRole, userId: string): Promise<HomeStats> 
   }
   const profile = await getVocalistProfileByOwnerId(userId);
   const vocalistId = profile?.id ?? "";
-  const requests = getVocalistRequests().filter((r) => r.vocalistId === vocalistId);
+  const allRequests = await getVocalistRequests();
+  const requests = allRequests.filter((r) => r.vocalistId === vocalistId);
   const activeProjects = requests.filter(
     (r) => r.status === "accepted" || r.status === "pending"
   ).length;

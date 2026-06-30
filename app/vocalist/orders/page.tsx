@@ -10,7 +10,6 @@ import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import {
   acceptVocalistRequest,
   declineVocalistRequest,
-  ensureVocalistRequestsSeeded,
 } from "@/lib/vocalist-requests";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
 
@@ -50,7 +49,6 @@ function VocalistOrdersContent() {
       router.replace("/signup?role=vocalist");
       return;
     }
-    ensureVocalistRequestsSeeded();
   }, [router, user, isReady]);
 
   const pending = useVocalistRequestsForVocalist(vocalistId, [...PENDING_STATUSES]);
