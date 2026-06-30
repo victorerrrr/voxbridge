@@ -223,7 +223,8 @@ export default function InternalShell({
         return;
       }
       const vocalistId = profile.id;
-      const activeOrders = getOrdersForVocalist(vocalistId).filter((order) =>
+      const allOrders = await getOrdersForVocalist(vocalistId);
+      const activeOrders = allOrders.filter((order) =>
         isHomeActiveOrderStatus(order.status)
       );
       setVocalistNav({

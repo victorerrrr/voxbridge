@@ -209,7 +209,6 @@ async function buildOrderFromRequest(request: VocalistRequest): Promise<Producer
     description: request.description,
     reference: request.reference,
     budget: request.budget,
-    producerName: request.producerName,
     trackName: request.projectName,
     vibe: request.brief || request.description,
   });
@@ -222,7 +221,7 @@ export async function acceptVocalistRequest(requestId: string): Promise<Producer
   const request = requests[index];
   if (request.status === "accepted") {
     if (request.orderId) {
-      const existing = getOrderById(request.orderId);
+      const existing = await getOrderById(request.orderId);
       if (existing) return existing;
     }
     const order = await buildOrderFromRequest(request);
@@ -256,10 +255,11 @@ export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefine
     .filter((r) => r.vocalistId === vocalistId && r.status === "accepted" && r.orderId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   for (const request of acceptedRequests) {
-    const linked = getOrderById(request.orderId!);
+    const linked = await getOrderById(request.orderId!);
     if (linked && linked.status !== "completed") return linked;
   }
-  return getProducerOrders().find(
+  const allOrders = await getProducerOrders();
+  return allOrders.find(
     (order) => order.vocalistId === vocalistId && order.status !== "completed"
   );
 }

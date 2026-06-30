@@ -154,7 +154,7 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
             onViewProfile={handleViewProfile}
           />
         ) : (
-          <ExploreLanding role={user.role} email={user.email} onBrowse={scrollToFeatured} />
+          <ExploreLanding role={user.role} userId={user.id} onBrowse={scrollToFeatured} />
         )}
       </div>
     </div>
@@ -163,11 +163,11 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
 
 function ExploreLanding({
   role,
-  email,
+  userId,
   onBrowse,
 }: {
   role: UserRole;
-  email: string;
+  userId: string;
   onBrowse: () => void;
 }) {
   return (
@@ -176,7 +176,7 @@ function ExploreLanding({
       <HomeTransformationDemo />
       <HomeFeaturedVocalists />
       <HomeTransformationsFeed />
-      <HomeActiveProjectsStrip role={role} email={email} compact />
+      <HomeActiveProjectsStrip role={role} userId={userId} compact />
     </div>
   );
 }

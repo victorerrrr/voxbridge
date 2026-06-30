@@ -15,7 +15,9 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<ProducerOrder[]>([]);
 
   useEffect(() => {
-    const sync = () => setOrders(getProducerOrders());
+    const sync = () => {
+      getProducerOrders().then(setOrders);
+    };
     sync();
     return subscribeProducerOrders(sync);
   }, []);

@@ -18,8 +18,9 @@ export function RequestVocalistButton({
   const router = useRouter();
 
   const onRequest = () => {
-    const order = createProducerOrder(vocalistId, vocalistName);
-    router.push(`/workspace/${order.id}`);
+    createProducerOrder(vocalistId, vocalistName).then((order) => {
+      router.push(`/workspace/${order.id}`);
+    });
   };
 
   return (

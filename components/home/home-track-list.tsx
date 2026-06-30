@@ -159,8 +159,9 @@ export function HomeTrackList({
                       <HoverAction
                         label="Request vocalist"
                         onClick={() => {
-                          const order = createProducerOrder(row.vocalistId, row.vocalistName);
-                          router.push(`/workspace/${order.id}`);
+                          createProducerOrder(row.vocalistId, row.vocalistName).then((order) => {
+                            router.push(`/workspace/${order.id}`);
+                          });
                         }}
                       >
                         Request

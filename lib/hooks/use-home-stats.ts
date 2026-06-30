@@ -15,7 +15,7 @@ const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 async function computeStats(role: UserRole, userId: string): Promise<HomeStats> {
   const savedVocalists = getSavedVocalistIds().length;
   if (role === "producer") {
-    const orders = getProducerOrders();
+    const orders = await getProducerOrders();
     const activeProjects = orders.filter((o) => isHomeActiveOrderStatus(o.status)).length;
     const cutoff = Date.now() - RECENT_MS;
     const recentRequests = orders.filter(

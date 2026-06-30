@@ -14,7 +14,9 @@ export function useProducerOrders(): ProducerOrder[] {
   const [orders, setOrders] = useState<ProducerOrder[]>(EMPTY_ORDERS);
 
   useEffect(() => {
-    const sync = () => setOrders([...getProducerOrders()]);
+    const sync = () => {
+      getProducerOrders().then((list) => setOrders([...list]));
+    };
     queueMicrotask(sync);
     return subscribeProducerOrders(sync);
   }, []);
@@ -30,8 +32,10 @@ export function useProducerOrder(orderId: string): {
   const [ready, setReady] = useState(false);
 
   const sync = useCallback(() => {
-    setOrder(getOrderById(orderId));
-    setReady(true);
+    getOrderById(orderId).then((found) => {
+      setOrder(found);
+      setReady(true);
+    });
   }, [orderId]);
 
   useEffect(() => {

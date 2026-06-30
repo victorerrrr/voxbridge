@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type HomeActiveProjectsStripProps = {
   role: UserRole;
-  email: string;
+  userId: string;
   compact?: boolean;
 };
 
@@ -24,6 +24,7 @@ export function useHomeActiveProjects(role: UserRole, userId: string) {
   const producerOrders = useProducerOrders();
   const [fallbackOrder, setFallbackOrder] = useState<ProducerOrder | null>(null);
   const [vocalistId, setVocalistId] = useState<string>("");
+  const [vocalistOrders, setVocalistOrders] = useState<ProducerOrder[]>([]);
   useEffect(() => {
     if (role === "vocalist") ensureVocalistRequestsSeeded();
   }, [role]);
@@ -38,7 +39,13 @@ export function useHomeActiveProjects(role: UserRole, userId: string) {
       if (!cancelled) setFallbackOrder(order ?? null);
     });
     getVocalistProfileByOwnerId(userId).then((profile) => {
-      if (!cancelled) setVocalistId(profile?.id ?? "");
+      const pid = profile?.id ?? "";
+      if (!cancelled) setVocalistId(pid);
+      if (!cancelled && pid) {
+        getOrdersForVocalist(pid).then((orders) => {
+          if (!cancelled) setVocalistOrders(orders);
+        });
+      }
     });
     return () => {
       cancelled = true;
@@ -48,12 +55,12 @@ export function useHomeActiveProjects(role: UserRole, userId: string) {
     if (role === "producer") {
       return producerOrders.filter((order) => isHomeActiveOrderStatus(order.status));
     }
-    const fromVocalist = getOrdersForVocalist(vocalistId).filter((order) =>
+    const fromVocalist = vocalistOrders.filter((order) =>
       isHomeActiveOrderStatus(order.status)
     );
     if (fromVocalist.length > 0) return fromVocalist;
     return fallbackOrder ? [fallbackOrder] : [];
-  }, [role, vocalistId, producerOrders, fallbackOrder]);
+  }, [role, vocalistOrders, producerOrders, fallbackOrder]);
 }
 
 function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string {
@@ -64,10 +71,10 @@ function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string 
 
 export function HomeActiveProjectsStrip({
   role,
-  email,
+  userId,
   compact = false,
 }: HomeActiveProjectsStripProps) {
-  const projects = useHomeActiveProjects(role, email);
+  const projects = useHomeActiveProjects(role, userId);
 
   if (projects.length === 0) return null;
 

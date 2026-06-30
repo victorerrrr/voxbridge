@@ -10,7 +10,11 @@ export default function AdminWorkspacesPage() {
   const [orders, setOrders] = useState<ProducerOrder[]>([]);
 
   useEffect(() => {
-    const sync = () => setOrders(getProducerOrders().filter((o) => o.status !== "completed"));
+    const sync = () => {
+      getProducerOrders().then((list) => {
+        setOrders(list.filter((o) => o.status !== "completed"));
+      });
+    };
     sync();
     return subscribeProducerOrders(sync);
   }, []);
