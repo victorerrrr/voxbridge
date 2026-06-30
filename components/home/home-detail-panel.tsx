@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { AnimatedButton } from "@/components/animated-button";
 import { RequestVocalistButton } from "@/components/request-vocalist-button";
 import { FakeWaveform } from "@/components/home/fake-waveform";
@@ -8,7 +9,7 @@ import { getAvatarGradient, getVocalistInitials, getVocalistMatchReasons } from 
 import { ExternalLinksDisplay } from "@/components/external-links-section";
 import { getVocalistById } from "@/lib/mockVocalists";
 import { hasExternalLinks } from "@/lib/external-links";
-import { getVocalistProfileById } from "@/lib/vocalist-profile";
+import { getVocalistProfileById, type VocalistProfile } from "@/lib/vocalist-profile";
 import { toHomeAudioTrack, type HomeWorkspaceTrack } from "@/lib/home-tracks";
 
 type HomeDetailPanelProps = {
@@ -42,7 +43,16 @@ export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPa
   }
 
   const vocalist = getVocalistById(track.vocalistId);
-  const storedProfile = getVocalistProfileById(track.vocalistId);
+  const [storedProfile, setStoredProfile] = useState<VocalistProfile | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    getVocalistProfileById(track.vocalistId).then((p) => {
+      if (!cancelled) setStoredProfile(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track.vocalistId]);
   const externalLinks = storedProfile?.externalLinks;
   const demos = storedProfile?.demos?.length
     ? storedProfile.demos

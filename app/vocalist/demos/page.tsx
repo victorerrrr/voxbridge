@@ -1,19 +1,28 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AnimatedButton } from "@/components/animated-button";
 import { VocalistFlowShell } from "@/components/vocalist-flow-shell";
 import {
   addVocalistDemo,
-  getVocalistProfileByEmail,
+  getVocalistProfileByOwnerId,
   type VocalistDemo,
 } from "@/lib/vocalist-profile";
 import { useVocalistGuard } from "@/lib/use-vocalist-guard";
 
 export default function VocalistDemosPage() {
   const user = useVocalistGuard({ requireProfile: true });
-  const profile = user ? getVocalistProfileByEmail(user.email) : undefined;
-  const [demos, setDemos] = useState<VocalistDemo[]>(profile?.demos ?? []);
+  const [demos, setDemos] = useState<VocalistDemo[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((profile) => {
+      if (!cancelled) setDemos(profile?.demos ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const [trackName, setTrackName] = useState("");
   const [description, setDescription] = useState("");
   const [fileName, setFileName] = useState("");
@@ -31,11 +40,11 @@ export default function VocalistDemosPage() {
     setFileName(file?.name ?? "");
   };
 
-  const onAddDemo = (event: FormEvent) => {
+  const onAddDemo = async (event: FormEvent) => {
     event.preventDefault();
     if (!trackName.trim() || !fileName) return;
 
-    const next = addVocalistDemo(user.email, {
+    const next = await addVocalistDemo(user.id, {
       trackName: trackName.trim(),
       description: description.trim(),
       fileName,

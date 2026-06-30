@@ -1,24 +1,19 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { getSavedVocalistIds } from "@/components/home/saved-vocalists";
 import { isHomeActiveOrderStatus } from "@/components/home/home-order-status";
 import type { UserRole } from "@/lib/auth";
 import { getProducerOrders, subscribeProducerOrders } from "@/lib/orders";
 import { getVocalistRequests, subscribeVocalistRequests } from "@/lib/vocalist-requests";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
-
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 export type HomeStats = {
   activeProjects: number;
   savedVocalists: number;
   recentRequests: number;
 };
-
 const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
-
-function computeStats(role: UserRole, email: string): HomeStats {
+async function computeStats(role: UserRole, userId: string): Promise<HomeStats> {
   const savedVocalists = getSavedVocalistIds().length;
-
   if (role === "producer") {
     const orders = getProducerOrders();
     const activeProjects = orders.filter((o) => isHomeActiveOrderStatus(o.status)).length;
@@ -28,8 +23,8 @@ function computeStats(role: UserRole, email: string): HomeStats {
     ).length;
     return { activeProjects, savedVocalists, recentRequests };
   }
-
-  const vocalistId = vocalistIdFromEmail(email);
+  const profile = await getVocalistProfileByOwnerId(userId);
+  const vocalistId = profile?.id ?? "";
   const requests = getVocalistRequests().filter((r) => r.vocalistId === vocalistId);
   const activeProjects = requests.filter(
     (r) => r.status === "accepted" || r.status === "pending"
@@ -38,13 +33,11 @@ function computeStats(role: UserRole, email: string): HomeStats {
   const recentRequests = requests.filter(
     (r) => new Date(r.createdAt).getTime() >= cutoff
   ).length;
-
   return { activeProjects, savedVocalists, recentRequests };
 }
-
-export function useHomeStats(role: UserRole, email: string): HomeStats {
+export function useHomeStats(role: UserRole, userId: string): HomeStats {
   const [revision, setRevision] = useState(0);
-
+  const [stats, setStats] = useState<HomeStats>({ activeProjects: 0, savedVocalists: 0, recentRequests: 0 });
   useEffect(() => {
     const bump = () => setRevision((n) => n + 1);
     const unsubOrders = subscribeProducerOrders(bump);
@@ -60,6 +53,14 @@ export function useHomeStats(role: UserRole, email: string): HomeStats {
       window.removeEventListener("storage", onStorage);
     };
   }, []);
-
-  return useMemo(() => computeStats(role, email), [role, email, revision]);
+  useEffect(() => {
+    let cancelled = false;
+    computeStats(role, userId).then((next) => {
+      if (!cancelled) setStats(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, userId, revision]);
+  return stats;
 }

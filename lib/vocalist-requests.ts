@@ -2,7 +2,7 @@
 
 import { getStoredUser } from "@/lib/auth";
 import { createProducerOrder, getOrderById, getProducerOrders, type ProducerOrder } from "@/lib/orders";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 
 const STORAGE_KEY = "voxbridge_vocalist_requests";
 
@@ -195,7 +195,9 @@ function seedMockRequestsIfNeeded(vocalistId: string): void {
 export async function ensureVocalistRequestsSeeded(): Promise<void> {
   const user = await getStoredUser();
   if (!user || user.role !== "vocalist") return;
-  seedMockRequestsIfNeeded(vocalistIdFromEmail(user.email));
+  const profile = await getVocalistProfileByOwnerId(user.id);
+  if (!profile) return;
+  seedMockRequestsIfNeeded(profile.id);
 }
 
 async function buildOrderFromRequest(request: VocalistRequest): Promise<ProducerOrder> {
@@ -247,7 +249,9 @@ export function declineVocalistRequest(requestId: string): void {
 export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefined> {
   const user = await getStoredUser();
   if (!user || user.role !== "vocalist") return undefined;
-  const vocalistId = vocalistIdFromEmail(user.email);
+  const profile = await getVocalistProfileByOwnerId(user.id);
+  if (!profile) return undefined;
+  const vocalistId = profile.id;
   const acceptedRequests = syncSnapshot()
     .filter((r) => r.vocalistId === vocalistId && r.status === "accepted" && r.orderId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

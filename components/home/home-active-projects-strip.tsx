@@ -9,7 +9,7 @@ import {
 import { useProducerOrders } from "@/lib/hooks/use-producer-orders";
 import type { UserRole } from "@/lib/auth";
 import { getActiveVocalistOrder, ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import { getOrdersForVocalist, type ProducerOrder } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
 import { useEffect, useMemo, useState } from "react";
@@ -20,39 +20,40 @@ type HomeActiveProjectsStripProps = {
   compact?: boolean;
 };
 
-export function useHomeActiveProjects(role: UserRole, email: string) {
+export function useHomeActiveProjects(role: UserRole, userId: string) {
   const producerOrders = useProducerOrders();
   const [fallbackOrder, setFallbackOrder] = useState<ProducerOrder | null>(null);
-
+  const [vocalistId, setVocalistId] = useState<string>("");
   useEffect(() => {
     if (role === "vocalist") ensureVocalistRequestsSeeded();
   }, [role]);
-
   useEffect(() => {
     if (role !== "vocalist") {
       setFallbackOrder(null);
+      setVocalistId("");
       return;
     }
     let cancelled = false;
     getActiveVocalistOrder().then((order) => {
       if (!cancelled) setFallbackOrder(order ?? null);
     });
+    getVocalistProfileByOwnerId(userId).then((profile) => {
+      if (!cancelled) setVocalistId(profile?.id ?? "");
+    });
     return () => {
       cancelled = true;
     };
-  }, [role, email]);
-
+  }, [role, userId]);
   return useMemo(() => {
     if (role === "producer") {
       return producerOrders.filter((order) => isHomeActiveOrderStatus(order.status));
     }
-    const vocalistId = vocalistIdFromEmail(email);
     const fromVocalist = getOrdersForVocalist(vocalistId).filter((order) =>
       isHomeActiveOrderStatus(order.status)
     );
     if (fromVocalist.length > 0) return fromVocalist;
     return fallbackOrder ? [fallbackOrder] : [];
-  }, [role, email, producerOrders, fallbackOrder]);
+  }, [role, vocalistId, producerOrders, fallbackOrder]);
 }
 
 function projectCollaboratorLabel(order: ProducerOrder, role: UserRole): string {

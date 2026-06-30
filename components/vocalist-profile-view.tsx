@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
@@ -28,10 +29,19 @@ export function VocalistProfileView({ id }: VocalistProfileViewProps) {
 
   const mounted = useMounted();
   const mock = getVocalistById(id);
-  const stored = mounted ? getVocalistProfileById(id) : undefined;
+  const [stored, setStored] = useState<VocalistProfile | undefined>(undefined);
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    getVocalistProfileById(id).then((p) => {
+      if (!cancelled) setStored(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, id]);
   const { user, isReady } = useClientAuth();
-  const isOwner =
-    isReady && stored && user?.email.toLowerCase() === stored.ownerEmail.toLowerCase();
+  const isOwner = isReady && stored && user?.id === stored.ownerId;
 
   if (!mounted) {
     if (mock) {
@@ -106,7 +116,16 @@ function StoredVocalistProfile({
   const { user, isReady } = useClientAuth();
   const reviews = getReviewsForVocalist(profile.id);
   const averageRating = getAverageRating(profile.id);
-  const completedCount = getCompletedOrdersCount(profile.id);
+  const [completedCount, setCompletedCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    getCompletedOrdersCount(profile.id).then((count) => {
+      if (!cancelled) setCompletedCount(count);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.id]);
   const allTags = [
     ...profile.tags.genres,
     ...profile.tags.moods,

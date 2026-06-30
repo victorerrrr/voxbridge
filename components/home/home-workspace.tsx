@@ -28,7 +28,7 @@ import { HomeFeaturedVocalists } from "@/components/home/home-featured-vocalists
 import { HomeTransformationsFeed } from "@/components/home/home-transformations-feed";
 import { ensureVocalistRequestsSeeded } from "@/lib/vocalist-requests";
 import { usePendingVocalistRequests } from "@/lib/hooks/use-vocalist-requests";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 
 type HomeWorkspaceProps = {
   user: AuthUser & { role: UserRole };
@@ -73,8 +73,20 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
   useEffect(() => {
     if (user.role === "vocalist") ensureVocalistRequestsSeeded();
   }, [user.role]);
-
-  const vocalistId = vocalistIdFromEmail(user.email);
+  const [vocalistId, setVocalistId] = useState<string>("");
+  useEffect(() => {
+    if (user.role !== "vocalist") {
+      setVocalistId("");
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((profile) => {
+      if (!cancelled) setVocalistId(profile?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.role, user.id]);
   const pendingRequests = usePendingVocalistRequests(vocalistId);
 
   const handleSelect = useCallback(

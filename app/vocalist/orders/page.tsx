@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { VocalistRequestCard } from "@/components/vocalist-request-card";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useVocalistRequestsForVocalist } from "@/lib/hooks/use-vocalist-requests";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import {
   acceptVocalistRequest,
   declineVocalistRequest,
@@ -29,7 +29,20 @@ export default function VocalistOrdersPage() {
 function VocalistOrdersContent() {
   const router = useRouter();
   const { user, isReady } = useClientAuth();
-  const vocalistId = user ? vocalistIdFromEmail(user.email) : "";
+  const [vocalistId, setVocalistId] = useState("");
+  useEffect(() => {
+    if (!user) {
+      setVocalistId("");
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((profile) => {
+      if (!cancelled) setVocalistId(profile?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!isReady) return;

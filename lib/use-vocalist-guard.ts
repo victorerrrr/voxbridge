@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredUser, type AuthUser } from "@/lib/auth";
-import { getVocalistProfileByEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 
 type GuardOptions = {
   requireProfile?: boolean;
@@ -25,7 +25,7 @@ export function useVocalistGuard(options: GuardOptions = {}): AuthUser | null {
         return;
       }
       if (options.requireProfile) {
-        const profile = getVocalistProfileByEmail(stored.email);
+        const profile = await getVocalistProfileByOwnerId(stored.id);
         if (!profile?.username) {
           router.replace("/vocalist/onboarding");
           return;

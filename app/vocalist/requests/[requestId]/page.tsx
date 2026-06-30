@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { MockAudioPlayer } from "@/components/mock-audio-player";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useVocalistRequest } from "@/lib/hooks/use-vocalist-requests";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import {
   acceptVocalistRequest,
   declineVocalistRequest,
@@ -31,7 +31,20 @@ export default function VocalistRequestDetailPage() {
 function VocalistRequestDetailContent({ requestId }: { requestId: string }) {
   const router = useRouter();
   const { user, isReady } = useClientAuth();
-  const vocalistId = user ? vocalistIdFromEmail(user.email) : "";
+  const [vocalistId, setVocalistId] = useState("");
+  useEffect(() => {
+    if (!user) {
+      setVocalistId("");
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((profile) => {
+      if (!cancelled) setVocalistId(profile?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const request = useVocalistRequest(requestId);
 
   useEffect(() => {

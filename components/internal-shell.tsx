@@ -14,7 +14,7 @@ import { InternalBackground } from "@/components/internal-background";
 import { isHomeActiveOrderStatus } from "@/components/home/home-order-status";
 import { getOrdersForVocalist } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 
 type InternalShellProps = {
   role: UserRole;
@@ -211,13 +211,18 @@ export default function InternalShell({
       return;
     }
     let cancelled = false;
-    getStoredUser().then((user) => {
+    getStoredUser().then(async (user) => {
       if (cancelled) return;
       if (!user) {
         setVocalistNav(vocalistNavFallback);
         return;
       }
-      const vocalistId = vocalistIdFromEmail(user.email);
+      const profile = await getVocalistProfileByOwnerId(user.id);
+      if (cancelled || !profile) {
+        setVocalistNav(vocalistNavFallback);
+        return;
+      }
+      const vocalistId = profile.id;
       const activeOrders = getOrdersForVocalist(vocalistId).filter((order) =>
         isHomeActiveOrderStatus(order.status)
       );

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatedButton } from "@/components/animated-button";
 import { ExternalLinksEditor } from "@/components/external-links-section";
@@ -16,12 +16,14 @@ import {
   VOCAL_REGISTER_OPTIONS,
   VOCAL_TYPE_OPTIONS,
   VOICE_CHARACTERISTIC_OPTIONS,
-  getVocalistProfileByEmail,
+  getVocalistProfileByOwnerId,
   upsertVocalistProfile,
   type RecordingEnvironment,
   type RecordingSetup,
+  type VocalistProfile,
 } from "@/lib/vocalist-profile";
 import { useVocalistGuard } from "@/lib/use-vocalist-guard";
+import type { AuthUser } from "@/lib/auth";
 
 const genreSuggestions = DEFAULT_GENRE_TAG_OPTIONS.slice(0, 8);
 const languageSuggestions = ["English", "Spanish", "French", "German", "Portuguese"];
@@ -47,10 +49,44 @@ function formatStudioSummary(setup: RecordingSetup): string {
 }
 
 export default function VocalistOnboardingPage() {
-  const router = useRouter();
   const user = useVocalistGuard();
-  const existing = user ? getVocalistProfileByEmail(user.email) : undefined;
+  const [existing, setExisting] = useState<VocalistProfile | undefined>(undefined);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  useEffect(() => {
+    if (!user) {
+      setExisting(undefined);
+      setProfileLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((p) => {
+      if (!cancelled) {
+        setExisting(p);
+        setProfileLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+  if (!user || !profileLoaded) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black text-zinc-300">
+        Loading...
+      </main>
+    );
+  }
+  return <VocalistOnboardingForm key={existing?.updatedAt ?? "new"} user={user} existing={existing} />;
+}
 
+function VocalistOnboardingForm({
+  user,
+  existing,
+}: {
+  user: AuthUser;
+  existing: VocalistProfile | undefined;
+}) {
+  const router = useRouter();
   const [username, setUsername] = useState(user?.username ?? "");
   const [bio, setBio] = useState(existing?.bio ?? "");
   const [genres, setGenres] = useState<string[]>(existing?.genres ?? []);
@@ -70,8 +106,8 @@ export default function VocalistOnboardingPage() {
     const preset = new Set<string>(VOICE_CHARACTERISTIC_OPTIONS);
     const fromProfile = existing?.voiceCharacteristics?.length
       ? existing.voiceCharacteristics
-      : (existing?.voiceTones ?? []).filter((t) => preset.has(t));
-    const extras = (existing?.voiceCharacteristics ?? []).filter((t) => !preset.has(t));
+      : (existing?.voiceTones ?? []).filter((t: string) => preset.has(t));
+    const extras = (existing?.voiceCharacteristics ?? []).filter((t: string) => !preset.has(t));
     return [...new Set([...fromProfile, ...extras])];
   });
 
@@ -148,7 +184,7 @@ export default function VocalistOnboardingPage() {
       daw: resolvePresetValue(dawPreset, dawCustom),
     };
 
-    upsertVocalistProfile(user.email, {
+    upsertVocalistProfile(user.id, {
       username: username.trim(),
       bio: bio.trim(),
       voiceTones: voiceCharacteristics,

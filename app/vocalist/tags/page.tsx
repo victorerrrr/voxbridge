@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatedButton } from "@/components/animated-button";
 import { TagSectionAddButton } from "@/components/tag-section-add-button";
@@ -11,10 +11,9 @@ import {
   DEFAULT_MOOD_TAG_OPTIONS,
   DEFAULT_VOICE_TAG_OPTIONS,
   getAdditionalGenreOptions,
-  getVocalistProfileByEmail,
+  getVocalistProfileByOwnerId,
   mergeMatchingTagsForSave,
   setVocalistTags,
-  vocalistIdFromEmail,
   type VocalistProfile,
   type VocalistTags,
 } from "@/lib/vocalist-profile";
@@ -48,8 +47,20 @@ function mergeUniqueOptions(base: string[], custom: string[]): string[] {
 
 export default function VocalistTagsPage() {
   const user = useVocalistGuard({ requireProfile: true });
-  const profile = user ? getVocalistProfileByEmail(user.email) : undefined;
-
+  const [profile, setProfile] = useState<VocalistProfile | undefined>(undefined);
+  useEffect(() => {
+    if (!user) {
+      setProfile(undefined);
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((p) => {
+      if (!cancelled) setProfile(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   if (!user || !profile) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black text-zinc-300">
@@ -57,7 +68,6 @@ export default function VocalistTagsPage() {
       </main>
     );
   }
-
   return <VocalistTagsForm key={profile.updatedAt} user={user} profile={profile} />;
 }
 
@@ -124,12 +134,12 @@ function VocalistTagsForm({ user, profile }: { user: AuthUser; profile: Vocalist
       return;
     }
 
-    setVocalistTags(user.email, finalTags);
+    setVocalistTags(user.id, finalTags);
     ensureVocalistRequestsSeeded();
     router.push("/home");
   };
 
-  const profileId = vocalistIdFromEmail(user.email);
+  const profileId = profile.id;
   const canSubmit =
     tags.genres.length > 0 && tags.moods.length > 0 && tags.voiceTypes.length > 0;
 

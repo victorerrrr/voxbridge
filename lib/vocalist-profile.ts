@@ -1,11 +1,9 @@
 "use client";
 
 import type { ExternalLinks } from "@/lib/external-links";
-
-const STORAGE_KEY = "voxbridge_vocalist_profiles";
+import { supabase } from "@/lib/supabase-client";
 
 export type RecordingEnvironment = "home" | "professional" | "both" | "";
-
 export type RecordingSetup = {
   microphone: string;
   audioInterface: string;
@@ -15,64 +13,26 @@ export type RecordingSetup = {
 };
 
 export const VOICE_CHARACTERISTIC_OPTIONS = [
-  "Warm",
-  "Airy",
-  "Dark",
-  "Bright",
-  "Raspy",
-  "Soft",
-  "Powerful",
-  "Emotional",
-  "Breathable",
-  "Aggressive",
-  "Smooth",
-  "Nasal",
-  "Deep",
-  "Thin",
-  "Rich",
+  "Warm", "Airy", "Dark", "Bright", "Raspy", "Soft", "Powerful",
+  "Emotional", "Breathable", "Aggressive", "Smooth", "Nasal", "Deep", "Thin", "Rich",
 ] as const;
 
-export const VOCAL_TYPE_OPTIONS = [
-  "Soprano",
-  "Mezzo",
-  "Alto",
-  "Tenor",
-  "Baritone",
-  "Bass",
-] as const;
-
+export const VOCAL_TYPE_OPTIONS = ["Soprano", "Mezzo", "Alto", "Tenor", "Baritone", "Bass"] as const;
 export const VOCAL_REGISTER_OPTIONS = ["High", "Mid", "Low", "Wide"] as const;
 
-
 export const MICROPHONE_PRESETS = [
-  "Neumann U87",
-  "Neumann TLM 103",
-  "Shure SM7B",
-  "Shure SM58",
-  "Rode NT1",
-  "AKG C414",
-  "Audio-Technica AT4040",
-  "Other",
+  "Neumann U87", "Neumann TLM 103", "Shure SM7B", "Shure SM58",
+  "Rode NT1", "AKG C414", "Audio-Technica AT4040", "Other",
 ] as const;
 
 export const AUDIO_INTERFACE_PRESETS = [
-  "Universal Audio Apollo",
-  "Focusrite Scarlett",
-  "Audient iD14",
-  "RME Babyface",
-  "Motu M4",
-  "Other",
+  "Universal Audio Apollo", "Focusrite Scarlett", "Audient iD14",
+  "RME Babyface", "Motu M4", "Other",
 ] as const;
 
 export const DAW_PRESETS = [
-  "Pro Tools",
-  "Logic Pro",
-  "Ableton Live",
-  "FL Studio",
-  "Cubase",
-  "Reaper",
-  "Studio One",
-  "Other",
+  "Pro Tools", "Logic Pro", "Ableton Live", "FL Studio",
+  "Cubase", "Reaper", "Studio One", "Other",
 ] as const;
 
 export const EMPTY_RECORDING_SETUP: RecordingSetup = {
@@ -97,63 +57,45 @@ export type VocalistTags = {
 };
 
 export const DEFAULT_GENRE_TAG_OPTIONS = [
-  "Pop",
-  "Rock",
-  "Hip-Hop",
-  "R&B",
-  "Rap",
-  "Soul",
-  "Jazz",
-  "Country",
-  "Electronic",
-  "House",
-  "Techno",
-  "EDM",
-  "Afro House",
-  "Indie",
-  "Cinematic",
-  "Latin",
-  "Reggae",
-  "Metal",
-  "Folk",
-  "Trap",
-  "Drill",
-  "Hyperpop",
+  "Pop", "Rock", "Hip-Hop", "R&B", "Rap", "Soul", "Jazz", "Country",
+  "Electronic", "House", "Techno", "EDM", "Afro House", "Indie",
+  "Cinematic", "Latin", "Reggae", "Metal", "Folk", "Trap", "Drill", "Hyperpop",
 ];
 
 export const DEFAULT_MOOD_TAG_OPTIONS = [
-  "Dark",
-  "Emotional",
-  "Uplifting",
-  "Cinematic",
-  "Energetic",
-  "Chill",
-  "Melancholic",
-  "Dreamy",
-  "Aggressive",
-  "Romantic",
+  "Dark", "Emotional", "Uplifting", "Cinematic", "Energetic",
+  "Chill", "Melancholic", "Dreamy", "Aggressive", "Romantic",
 ];
 
 export const DEFAULT_VOICE_TAG_OPTIONS = [
-  "Warm",
-  "Airy",
-  "Husky",
-  "Deep",
-  "Bright",
-  "Soulful",
-  "Raspy",
-  "Smooth",
-  "Powerful",
-  "Breathy",
-  "Falsetto",
-  "Belty",
+  "Warm", "Airy", "Husky", "Deep", "Bright", "Soulful",
+  "Raspy", "Smooth", "Powerful", "Breathy", "Falsetto", "Belty",
 ];
+
+export type VocalistProfile = {
+  id: string;
+  ownerId: string;
+  username: string;
+  bio: string;
+  voiceTones: string[];
+  voiceCharacteristics: string[];
+  genres: string[];
+  languages: string[];
+  vocalRange: string;
+  studioEquipment: string;
+  recordingSetup: RecordingSetup;
+  externalLinks: ExternalLinks;
+  demos: VocalistDemo[];
+  tags: VocalistTags;
+  onboardingComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export function buildInitialMatchingTags(profile?: VocalistProfile): VocalistTags {
   const existing = profile?.tags ?? { genres: [], moods: [], voiceTypes: [] };
   const profileGenres = profile?.genres ?? [];
   const profileVoices = profile?.voiceTones ?? [];
-
   return {
     genres: [...new Set([...profileGenres, ...existing.genres])],
     moods: [...existing.moods],
@@ -177,87 +119,10 @@ export function getAdditionalGenreOptions(profileGenres: string[]): string[] {
   return DEFAULT_GENRE_TAG_OPTIONS.filter((genre) => !selected.has(genre));
 }
 
-export type VocalistProfile = {
-  id: string;
-  ownerEmail: string;
-  username: string;
-  bio: string;
-  voiceTones: string[];
-  voiceCharacteristics: string[];
-  genres: string[];
-  languages: string[];
-  vocalRange: string;
-  studioEquipment: string;
-  recordingSetup: RecordingSetup;
-  externalLinks: ExternalLinks;
-  demos: VocalistDemo[];
-  tags: VocalistTags;
-  onboardingComplete: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-const EMPTY_PROFILES: VocalistProfile[] = [];
-
 const listeners = new Set<() => void>();
-
-let cachedRaw: string | null | undefined;
-let cachedSnapshot: VocalistProfile[] = EMPTY_PROFILES;
 
 function emitChange(): void {
   listeners.forEach((listener) => listener());
-}
-
-function normalizeVocalistProfile(profile: VocalistProfile): VocalistProfile {
-  return {
-    ...profile,
-    voiceCharacteristics: profile.voiceCharacteristics ?? [],
-    recordingSetup: profile.recordingSetup ?? { ...EMPTY_RECORDING_SETUP },
-    externalLinks: profile.externalLinks ?? {},
-  };
-}
-
-function sortProfiles(profiles: VocalistProfile[]): VocalistProfile[] {
-  return [...profiles].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-}
-
-function syncSnapshot(): VocalistProfile[] {
-  if (typeof window === "undefined") return EMPTY_PROFILES;
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === cachedRaw) return cachedSnapshot;
-
-  cachedRaw = raw;
-  if (!raw) {
-    cachedSnapshot = EMPTY_PROFILES;
-    return cachedSnapshot;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as VocalistProfile[];
-    const list = Array.isArray(parsed) ? parsed.map(normalizeVocalistProfile) : [];
-    cachedSnapshot = list.length === 0 ? EMPTY_PROFILES : sortProfiles(list);
-  } catch {
-    cachedSnapshot = EMPTY_PROFILES;
-  }
-
-  return cachedSnapshot;
-}
-
-function readProfiles(): VocalistProfile[] {
-  return [...syncSnapshot()];
-}
-
-function writeProfiles(profiles: VocalistProfile[]): void {
-  if (typeof window === "undefined") return;
-
-  const raw = JSON.stringify(profiles);
-  window.localStorage.setItem(STORAGE_KEY, raw);
-  cachedRaw = raw;
-  cachedSnapshot = profiles.length === 0 ? EMPTY_PROFILES : sortProfiles(profiles);
-  emitChange();
 }
 
 export function subscribeVocalistProfiles(onStoreChange: () => void): () => void {
@@ -265,98 +130,227 @@ export function subscribeVocalistProfiles(onStoreChange: () => void): () => void
   return () => listeners.delete(onStoreChange);
 }
 
+type DbVocalistProfileRow = {
+  id: string;
+  owner_id: string;
+  bio: string;
+  voice_tones: string[];
+  voice_characteristics: string[];
+  genres: string[];
+  languages: string[];
+  vocal_range: string;
+  studio_equipment: string;
+  recording_setup_microphone: string;
+  recording_setup_audio_interface: string;
+  recording_setup_daw: string;
+  recording_setup_environment: RecordingEnvironment;
+  recording_setup_studio_sessions_available: boolean | null;
+  tags_genres: string[];
+  tags_moods: string[];
+  tags_voice_types: string[];
+  onboarding_complete: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
-export function vocalistIdFromEmail(email: string): string {
-  const slug = email
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `vb-${slug || "user"}`;
+type DbVocalistDemoRow = {
+  id: string;
+  track_name: string;
+  description: string;
+  file_name: string;
+};
+
+type DbUserJoinRow = {
+  username: string;
+  external_link_spotify: string | null;
+  external_link_soundcloud: string | null;
+  external_link_youtube: string | null;
+  external_link_instagram: string | null;
+  external_link_website: string | null;
+};
+
+function rowToProfile(
+  row: DbVocalistProfileRow,
+  user: DbUserJoinRow,
+  demos: DbVocalistDemoRow[]
+): VocalistProfile {
+  const externalLinks: ExternalLinks = {};
+  if (user.external_link_spotify) externalLinks.spotify = user.external_link_spotify;
+  if (user.external_link_soundcloud) externalLinks.soundcloud = user.external_link_soundcloud;
+  if (user.external_link_youtube) externalLinks.youtube = user.external_link_youtube;
+  if (user.external_link_instagram) externalLinks.instagram = user.external_link_instagram;
+  if (user.external_link_website) externalLinks.website = user.external_link_website;
+
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    username: user.username,
+    bio: row.bio,
+    voiceTones: row.voice_tones ?? [],
+    voiceCharacteristics: row.voice_characteristics ?? [],
+    genres: row.genres ?? [],
+    languages: row.languages ?? [],
+    vocalRange: row.vocal_range,
+    studioEquipment: row.studio_equipment,
+    recordingSetup: {
+      microphone: row.recording_setup_microphone,
+      audioInterface: row.recording_setup_audio_interface,
+      daw: row.recording_setup_daw,
+      environment: row.recording_setup_environment,
+      studioSessionsAvailable: row.recording_setup_studio_sessions_available,
+    },
+    externalLinks,
+    demos: demos.map((d) => ({
+      id: d.id,
+      trackName: d.track_name,
+      description: d.description,
+      fileName: d.file_name,
+    })),
+    tags: {
+      genres: row.tags_genres ?? [],
+      moods: row.tags_moods ?? [],
+      voiceTypes: row.tags_voice_types ?? [],
+    },
+    onboardingComplete: row.onboarding_complete,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
-export function getVocalistProfileById(id: string): VocalistProfile | undefined {
-  return syncSnapshot().find((profile) => profile.id === id);
+const PROFILE_SELECT =
+  "*, users!vocalist_profiles_owner_id_fkey(username, external_link_spotify, external_link_soundcloud, external_link_youtube, external_link_instagram, external_link_website)";
+
+export async function getVocalistProfileById(id: string): Promise<VocalistProfile | undefined> {
+  const { data: row, error } = await supabase
+    .from("vocalist_profiles")
+    .select(PROFILE_SELECT)
+    .eq("id", id)
+    .single();
+  if (error || !row) return undefined;
+
+  const { data: demos } = await supabase
+    .from("vocalist_demos")
+    .select("id, track_name, description, file_name")
+    .eq("vocalist_profile_id", id);
+
+  const userJoin = (row as unknown as { users: DbUserJoinRow }).users;
+  return rowToProfile(row as unknown as DbVocalistProfileRow, userJoin, demos ?? []);
 }
 
-export function getVocalistProfileByEmail(email: string): VocalistProfile | undefined {
-  const normalized = email.trim().toLowerCase();
-  return syncSnapshot().find((profile) => profile.ownerEmail.toLowerCase() === normalized);
+export async function getVocalistProfileByOwnerId(
+  ownerId: string
+): Promise<VocalistProfile | undefined> {
+  const { data: row, error } = await supabase
+    .from("vocalist_profiles")
+    .select(PROFILE_SELECT)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (error || !row) return undefined;
+
+  const { data: demos } = await supabase
+    .from("vocalist_demos")
+    .select("id, track_name, description, file_name")
+    .eq("vocalist_profile_id", row.id);
+
+  const userJoin = (row as unknown as { users: DbUserJoinRow }).users;
+  return rowToProfile(row as unknown as DbVocalistProfileRow, userJoin, demos ?? []);
 }
 
-export function upsertVocalistProfile(
-  email: string,
+export async function upsertVocalistProfile(
+  ownerId: string,
   patch: Partial<
-    Omit<VocalistProfile, "id" | "ownerEmail" | "createdAt" | "updatedAt" | "demos" | "tags">
+    Omit<VocalistProfile, "id" | "ownerId" | "createdAt" | "updatedAt" | "demos" | "tags">
   > & {
     demos?: VocalistDemo[];
     tags?: VocalistTags;
   }
-): VocalistProfile {
-  const profiles = readProfiles();
-  const normalizedEmail = email.trim().toLowerCase();
-  const id = vocalistIdFromEmail(normalizedEmail);
-  const now = new Date().toISOString();
-  const existing = profiles.find((p) => p.ownerEmail.toLowerCase() === normalizedEmail);
+): Promise<VocalistProfile> {
+  const existing = await getVocalistProfileByOwnerId(ownerId);
 
-  const next: VocalistProfile = {
-    id,
-    ownerEmail: normalizedEmail,
-    username: patch.username ?? existing?.username ?? "",
+  if (patch.username !== undefined || patch.externalLinks !== undefined) {
+    const userPatch: Record<string, unknown> = {};
+    if (patch.username !== undefined) userPatch.username = patch.username;
+    if (patch.externalLinks !== undefined) {
+      userPatch.external_link_spotify = patch.externalLinks.spotify ?? null;
+      userPatch.external_link_soundcloud = patch.externalLinks.soundcloud ?? null;
+      userPatch.external_link_youtube = patch.externalLinks.youtube ?? null;
+      userPatch.external_link_instagram = patch.externalLinks.instagram ?? null;
+      userPatch.external_link_website = patch.externalLinks.website ?? null;
+    }
+    await supabase.from("users").update(userPatch).eq("id", ownerId);
+  }
+
+  const recordingSetup = patch.recordingSetup ?? existing?.recordingSetup ?? EMPTY_RECORDING_SETUP;
+  const tags = patch.tags ?? existing?.tags ?? { genres: [], moods: [], voiceTypes: [] };
+
+  const profileRow = {
+    owner_id: ownerId,
     bio: patch.bio ?? existing?.bio ?? "",
-    voiceTones: patch.voiceTones ?? existing?.voiceTones ?? [],
-    voiceCharacteristics: patch.voiceCharacteristics ?? existing?.voiceCharacteristics ?? [],
+    voice_tones: patch.voiceTones ?? existing?.voiceTones ?? [],
+    voice_characteristics: patch.voiceCharacteristics ?? existing?.voiceCharacteristics ?? [],
     genres: patch.genres ?? existing?.genres ?? [],
     languages: patch.languages ?? existing?.languages ?? [],
-    vocalRange: patch.vocalRange ?? existing?.vocalRange ?? "",
-    studioEquipment: patch.studioEquipment ?? existing?.studioEquipment ?? "",
-    recordingSetup: patch.recordingSetup ?? existing?.recordingSetup ?? { ...EMPTY_RECORDING_SETUP },
-    externalLinks: patch.externalLinks ?? existing?.externalLinks ?? {},
-    demos: patch.demos ?? existing?.demos ?? [],
-    tags: patch.tags ?? existing?.tags ?? { genres: [], moods: [], voiceTypes: [] },
-    onboardingComplete: patch.onboardingComplete ?? existing?.onboardingComplete ?? false,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
+    vocal_range: patch.vocalRange ?? existing?.vocalRange ?? "",
+    studio_equipment: patch.studioEquipment ?? existing?.studioEquipment ?? "",
+    recording_setup_microphone: recordingSetup.microphone,
+    recording_setup_audio_interface: recordingSetup.audioInterface,
+    recording_setup_daw: recordingSetup.daw,
+    recording_setup_environment: recordingSetup.environment,
+    recording_setup_studio_sessions_available: recordingSetup.studioSessionsAvailable,
+    tags_genres: tags.genres,
+    tags_moods: tags.moods,
+    tags_voice_types: tags.voiceTypes,
+    onboarding_complete: patch.onboardingComplete ?? existing?.onboardingComplete ?? false,
   };
 
   if (existing) {
-    const index = profiles.findIndex((p) => p.id === existing.id);
-    profiles[index] = next;
+    await supabase.from("vocalist_profiles").update(profileRow).eq("id", existing.id);
   } else {
-    profiles.unshift(next);
+    await supabase.from("vocalist_profiles").insert(profileRow);
   }
 
-  writeProfiles(profiles);
-  return next;
+  emitChange();
+  const refreshed = await getVocalistProfileByOwnerId(ownerId);
+  if (!refreshed) {
+    throw new Error("Failed to read back vocalist profile after upsert.");
+  }
+  return refreshed;
 }
 
-export function addVocalistDemo(email: string, demo: Omit<VocalistDemo, "id">): VocalistProfile {
-  const profile = getVocalistProfileByEmail(email);
-  const demos = profile?.demos ?? [];
-  const nextDemo: VocalistDemo = {
-    ...demo,
-    id: `demo-${Date.now().toString(36)}`,
-  };
-  return upsertVocalistProfile(email, {
-    demos: [...demos, nextDemo],
-    username: profile?.username,
-    bio: profile?.bio,
+export async function addVocalistDemo(
+  ownerId: string,
+  demo: Omit<VocalistDemo, "id">
+): Promise<VocalistProfile> {
+  const profile = await getVocalistProfileByOwnerId(ownerId);
+  if (!profile) {
+    throw new Error("Cannot add a demo before the vocalist profile exists.");
+  }
+  await supabase.from("vocalist_demos").insert({
+    vocalist_profile_id: profile.id,
+    track_name: demo.trackName,
+    description: demo.description,
+    file_name: demo.fileName,
   });
-}
-
-export function setVocalistTags(email: string, tags: VocalistTags): VocalistProfile {
-  return upsertVocalistProfile(email, { tags, onboardingComplete: true });
-}
-
-export function getCompletedOrdersCount(vocalistId: string): number {
-  if (typeof window === "undefined") return 0;
-  try {
-    const raw = window.localStorage.getItem("voxbridge_producer_orders");
-    if (!raw) return 0;
-    const orders = JSON.parse(raw) as { vocalistId?: string; status?: string }[];
-    if (!Array.isArray(orders)) return 0;
-    return orders.filter((o) => o.vocalistId === vocalistId && o.status === "completed").length;
-  } catch {
-    return 0;
+  emitChange();
+  const refreshed = await getVocalistProfileByOwnerId(ownerId);
+  if (!refreshed) {
+    throw new Error("Failed to read back vocalist profile after adding demo.");
   }
+  return refreshed;
+}
+
+export async function setVocalistTags(
+  ownerId: string,
+  tags: VocalistTags
+): Promise<VocalistProfile> {
+  return upsertVocalistProfile(ownerId, { tags, onboardingComplete: true });
+}
+
+export async function getCompletedOrdersCount(vocalistProfileId: string): Promise<number> {
+  const { count } = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("vocalist_profile_id", vocalistProfileId)
+    .eq("status", "completed");
+  return count ?? 0;
 }

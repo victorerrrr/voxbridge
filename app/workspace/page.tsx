@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
@@ -8,7 +8,7 @@ import { createMockWorkspaceProject } from "@/lib/orders";
 import { useProducerOrders } from "@/lib/hooks/use-producer-orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
-import { vocalistIdFromEmail } from "@/lib/vocalist-profile";
+import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
 import {
   getHomeOrderStatusLabel,
   getHomeOrderStatusStyle,
@@ -32,7 +32,20 @@ function WorkspaceListContent() {
     return <p className="text-vox-muted">Loading workspace...</p>;
   }
 
-  const vocalistId = user ? vocalistIdFromEmail(user.email) : "";
+  const [vocalistId, setVocalistId] = useState("");
+  useEffect(() => {
+    if (!user) {
+      setVocalistId("");
+      return;
+    }
+    let cancelled = false;
+    getVocalistProfileByOwnerId(user.id).then((profile) => {
+      if (!cancelled) setVocalistId(profile?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const orders =
     role === "vocalist"
       ? allOrders.filter((order) => order.vocalistId === vocalistId)

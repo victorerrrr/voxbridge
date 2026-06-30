@@ -129,28 +129,23 @@ export const clearStoredUser = async (): Promise<void> => {
 export const registerStoredUser = async (
  user: Omit<AuthUser, "id" | "isAuthenticated"> & { password: string }
 ): Promise<{ user: AuthUser | null; error: string | null }> => {
- const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-   email: user.email.trim(),
-   password: user.password,
- });
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    email: user.email.trim(),
+    password: user.password,
+    options: {
+      data: {
+        username: user.username.trim(),
+        role: user.role,
+      },
+    },
+  });
 
- if (signUpError) {
-   return { user: null, error: signUpError.message };
- }
- if (!signUpData.user) {
-   return { user: null, error: "Sign up did not return a user." };
- }
-
- const { error: insertError } = await supabase.from("users").insert({
-   id: signUpData.user.id,
-   email: user.email.trim(),
-   username: user.username.trim(),
-   role: user.role,
- });
-
- if (insertError) {
-   return { user: null, error: insertError.message };
- }
+  if (signUpError) {
+    return { user: null, error: signUpError.message };
+  }
+  if (!signUpData.user) {
+    return { user: null, error: "Sign up did not return a user." };
+  }
 
  return {
    user: {
