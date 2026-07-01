@@ -217,8 +217,27 @@ function rowToProfile(
   };
 }
 
-const PROFILE_SELECT =
-  "*, users!vocalist_profiles_owner_id_fkey(username, external_link_spotify, external_link_soundcloud, external_link_youtube, external_link_instagram, external_link_website)";
+const PROFILE_SELECT = "*";
+
+async function fetchUserPublicProfile(ownerId: string): Promise<DbUserJoinRow> {
+  const { data } = await supabase
+    .from("user_public_profile")
+    .select(
+      "username, external_link_spotify, external_link_soundcloud, external_link_youtube, external_link_instagram, external_link_website"
+    )
+    .eq("id", ownerId)
+    .single();
+  return (
+    data ?? {
+      username: "",
+      external_link_spotify: null,
+      external_link_soundcloud: null,
+      external_link_youtube: null,
+      external_link_instagram: null,
+      external_link_website: null,
+    }
+  );
+}
 
 export async function getVocalistProfileById(id: string): Promise<VocalistProfile | undefined> {
   const { data: row, error } = await supabase
@@ -233,7 +252,7 @@ export async function getVocalistProfileById(id: string): Promise<VocalistProfil
     .select("id, track_name, description, file_name")
     .eq("vocalist_profile_id", id);
 
-  const userJoin = (row as unknown as { users: DbUserJoinRow }).users;
+  const userJoin = await fetchUserPublicProfile((row as unknown as DbVocalistProfileRow).owner_id);
   return rowToProfile(row as unknown as DbVocalistProfileRow, userJoin, demos ?? []);
 }
 
@@ -252,7 +271,7 @@ export async function getVocalistProfileByOwnerId(
     .select("id, track_name, description, file_name")
     .eq("vocalist_profile_id", row.id);
 
-  const userJoin = (row as unknown as { users: DbUserJoinRow }).users;
+  const userJoin = await fetchUserPublicProfile(ownerId);
   return rowToProfile(row as unknown as DbVocalistProfileRow, userJoin, demos ?? []);
 }
 

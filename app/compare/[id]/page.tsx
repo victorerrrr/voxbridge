@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
-import { RequestVocalistButton } from "@/components/request-vocalist-button";
 import { getAvatarGradient, getVocalistMatchReasons } from "@/lib/matching";
 import { getVocalistById } from "@/lib/mockVocalists";
 import { useUploadContext } from "@/lib/hooks/use-upload-context";
@@ -133,7 +132,7 @@ export default function ComparePage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <RequestVocalistButton vocalistId={vocalist.id} vocalistName={vocalist.name} />
+          
           <AnimatedButton
             href="/results"
             variant="secondary"

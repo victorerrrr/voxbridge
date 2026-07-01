@@ -229,11 +229,13 @@ export function HomeDetailPanel({ track, matchingMode, onCompare }: HomeDetailPa
         )}
 
         <div className="flex flex-col gap-2">
-          <RequestVocalistButton
-            vocalistId={track.vocalistId}
-            vocalistName={track.vocalistName}
-            className="w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-[0_0_28px_rgba(168,85,247,0.25)]"
-          />
+          {!vocalist && (
+            <RequestVocalistButton
+              vocalistId={track.vocalistId}
+              vocalistName={track.vocalistName}
+              className="w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-[0_0_28px_rgba(168,85,247,0.25)]"
+            />
+          )}
           {matchingMode && onCompare && (
             <AnimatedButton
               type="button"

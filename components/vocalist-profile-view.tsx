@@ -88,6 +88,7 @@ function MockVocalistProfile({ vocalist }: { vocalist: Vocalist }) {
         description={vocalist.description}
         tags={vocalist.tags}
         matchReasons={matchReasons}
+        isDemo
         demoUrl={vocalist.demoUrl}
         priceUsd={vocalist.priceUsd}
         deliveryDays={vocalist.deliveryDays}
@@ -201,6 +202,7 @@ function ProfileLayout({
   voiceCharacteristics = [],
   externalLinks,
   isOwner,
+  isDemo,
 }: {
   name: string;
   tagline: string;
@@ -230,6 +232,7 @@ function ProfileLayout({
   voiceCharacteristics?: string[];
   externalLinks?: import("@/lib/external-links").ExternalLinks;
   isOwner?: boolean;
+  isDemo?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-zinc-950/60 p-6 md:p-8">
@@ -384,7 +387,7 @@ function ProfileLayout({
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        {!isOwner && <RequestVocalistButton vocalistId={vocalistId} vocalistName={vocalistName} />}
+        {!isOwner && !isDemo && <RequestVocalistButton vocalistId={vocalistId} vocalistName={vocalistName} />}
         {isOwner && (
           <>
             <AnimatedButton href="/vocalist/demos" variant="secondary" className="rounded-lg px-5 py-2.5 text-sm">
