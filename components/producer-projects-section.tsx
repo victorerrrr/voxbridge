@@ -16,7 +16,7 @@ export function ProducerProjectsSection() {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">My Projects</h2>
           <p className="mt-2 text-vox-secondary">
-            Producer orders from upload → match → request → workspace.
+            Producer orders — request → accept → workspace → review.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -39,14 +39,23 @@ export function ProducerProjectsSection() {
 
       {orders.length === 0 ? (
         <div className="rounded-xl border border-white/10 bg-black/30 p-6 text-zinc-300">
-          <p>No projects yet. Upload an AI vocal and request a vocalist to start.</p>
-          <AnimatedButton
-            href="/search"
-            variant="secondary"
-            className="mt-4 inline-flex rounded-lg px-4 py-2 text-sm"
-          >
-            Upload AI vocal
-          </AnimatedButton>
+          <p>No projects yet. Open a vocalist profile and send a request to start.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <AnimatedButton
+              href="/my-requests"
+              variant="secondary"
+              className="inline-flex rounded-lg px-4 py-2 text-sm"
+            >
+              My requests
+            </AnimatedButton>
+            <AnimatedButton
+              href="/home"
+              variant="primary"
+              className="inline-flex rounded-lg px-4 py-2 text-sm"
+            >
+              Browse vocalists
+            </AnimatedButton>
+          </div>
         </div>
       ) : (
         <>

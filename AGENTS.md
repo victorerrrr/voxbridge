@@ -7,16 +7,17 @@ The core idea:
 - Vocalists create profiles and upload voice samples.
 - Producers upload a vocal reference or describe the desired voice.
 - The site shows matching vocalists.
-- At the MVP stage, matching uses mock data and tags.
-- Real AI voice matching will be added later.
+- At the MVP stage, matching on `/results` uses mock data and tags.
+- Real AI voice matching runs in Admin Lab (`/admin/ai-voice-matching`) via Python API.
 
 ## Tech Stack
 - Next.js App Router
 - TypeScript
 - Tailwind CSS
 - React components
-- For now, use mock data
-- Do not add Supabase until explicitly requested
+- **Supabase** — auth, profiles, vocalist requests, orders, reviews (live)
+- Mock/demo data for featured vocalists on `/home` and legacy matching UI
+- Python voice-matching service (port 8000) for Admin Lab only
 
 ## Development Rules
 - Do not rewrite the whole project unless necessary.
@@ -30,8 +31,9 @@ The core idea:
 ## Current MVP Pages
 - / (landing)
 - /signup, /login
-- /home (explore + matching modes)
+- /home (explore + matching modes; featured vocalists are **demo** profiles)
 - /search, /results, /compare/[id], /vocalists/[id]
+- /request/[vocalistId], /my-requests (producer outgoing requests)
 - /workspace, /workspace/[orderId]
 - /dashboard, /saved-vocalists
 - /vocalist/* (onboarding, orders, requests, demos, tags)
@@ -39,6 +41,14 @@ The core idea:
 - /admin/ai-voice-matching (AI lab + Python API)
 
 See **PROJECT_MEMO.md** and **HANDOFF_RU.md** for full route map.
+
+## Data layer (Supabase)
+- Auth + `profiles` / `user_public_profile`
+- `vocalist_profiles`, `vocalist_requests`, `orders`, `reviews`
+- Producer order flow: Request → Accept → Workspace → Review (E2E tested)
+- RLS: vocalist accept needs `vocalist_insert_order_on_accept` — see `docs/supabase_fix_orders_accept_rls.sql`
+
+Still in **localStorage**: upload context (`voxbridge_upload_context`), admin role override, some admin UI prefs.
 
 ## Design Direction
 - Dark theme

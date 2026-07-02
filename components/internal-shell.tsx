@@ -66,8 +66,9 @@ const producerToolsGroup: SidebarGroup = {
   key: "producer-tools",
   title: "Producer tools",
   items: [
+    { key: "my-requests", label: "My requests", href: "/my-requests" },
     { key: "workspace", label: "Workspace", href: "/workspace" },
-    { key: "projects", label: "My Projects", href: "/workspace" },
+    { key: "projects", label: "My Projects", href: "/dashboard?tab=projects" },
     { key: "saved-vocalists", label: "Saved Vocalists", href: "/saved-vocalists" },
   ],
 };

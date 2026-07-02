@@ -123,7 +123,8 @@ function OverviewSection({ user, effectiveRole }: { user: AuthUser; effectiveRol
   const roleCards =
     effectiveRole === "producer"
       ? [
-          { title: "My Projects", body: "Track active briefs and matching rounds.", href: "/workspace" },
+          { title: "My requests", body: "Track outgoing requests to vocalists.", href: "/my-requests" },
+          { title: "My Projects", body: "Active and completed orders in workspace.", href: "/dashboard?tab=projects" },
           { title: "Saved Vocalists", body: "Manage your shortlisted vocal talents.", href: "/saved-vocalists" },
         ]
       : [

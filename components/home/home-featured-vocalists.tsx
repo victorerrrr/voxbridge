@@ -18,7 +18,8 @@ export function HomeFeaturedVocalists() {
           Featured vocalists
         </h2>
         <p className="mt-2 max-w-md text-vox-secondary">
-          Real voices ready for your next track — preview and open a profile.
+          Demo profiles for browsing the UI — not real registered vocalists. Use a real profile
+          (e.g. from search or direct link) to send a request.
         </p>
 
         <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -53,7 +54,12 @@ function FeaturedCard({
             {initials}
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-lg font-semibold text-white">{vocalist.name}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-lg font-semibold text-white">{vocalist.name}</h3>
+              <span className="shrink-0 rounded-full border border-zinc-500/40 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                Demo
+              </span>
+            </div>
             <p className="mt-0.5 truncate text-sm text-zinc-500">
               {vocalist.genres.join(" · ")}
             </p>

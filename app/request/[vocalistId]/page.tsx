@@ -52,16 +52,24 @@ function RequestVocalistContent() {
       <div className="mx-auto max-w-xl rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center">
         <h1 className="text-2xl font-semibold">Request sent</h1>
         <p className="mt-3 text-vox-secondary">
-          The vocalist will review your project and respond soon. You can track this request
-          from your workspace.
+          The vocalist will review your project and respond soon. Track status on My requests.
         </p>
-        <AnimatedButton
-          href="/workspace"
-          variant="primary"
-          className="mt-6 inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
-        >
-          Go to workspace
-        </AnimatedButton>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <AnimatedButton
+            href="/my-requests"
+            variant="primary"
+            className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+          >
+            My requests
+          </AnimatedButton>
+          <AnimatedButton
+            href="/workspace"
+            variant="secondary"
+            className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+          >
+            Workspace
+          </AnimatedButton>
+        </div>
       </div>
     );
   }

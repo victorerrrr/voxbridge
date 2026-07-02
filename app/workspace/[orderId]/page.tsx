@@ -25,6 +25,7 @@ export default function WorkspacePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showReview, setShowReview] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -97,6 +98,7 @@ export default function WorkspacePage() {
         });
       }
       setShowReview(false);
+      setReviewSubmitted(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to submit review.";
       setReviewError(message);
@@ -226,6 +228,18 @@ export default function WorkspacePage() {
               </div>
               {isCompleted && (
                 <p className="mt-3 text-xs font-medium text-emerald-300">Project completed</p>
+              )}
+              {reviewSubmitted && isCompleted && (
+                <div className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                  Review submitted — thank you! The vocalist&apos;s profile now shows your rating.
+                  <AnimatedButton
+                    href={`/vocalists/${order.vocalistId}`}
+                    variant="secondary"
+                    className="mt-2 block w-full rounded-lg px-3 py-1.5 text-xs"
+                  >
+                    View vocalist profile
+                  </AnimatedButton>
+                </div>
               )}
             </WorkspacePanel>
           </>

@@ -10,13 +10,13 @@
 **VoxBridge** — MVP маркетплейса для **продюсеров** и **вокалистов**:
 
 - Продюсер загружает AI-вокал (или описывает голос) → получает подбор вокалистов (сейчас **mock** на `/results`, реальный AI — в **Admin Lab**).
-- Запрос вокалиста → заказ в `localStorage` → общая **workspace** (чат, превью, ревизии, сдача).
+- Запрос вокалисту → заказ в **Supabase** → общая **workspace** (чат, превью, ревизии, сдача, отзыв).
 - Вокалист: онбординг, демо, теги, входящие заявки, работа в workspace.
 
-**Нет production backend и Supabase** — всё на **localStorage** + mock-данные.  
-**Не подключать Supabase**, пока явно не попросите.
+**Backend:** **Supabase** (auth, профили, заявки, заказы, отзывы).  
+**Mock/localStorage:** featured vocalists на `/home`, upload context, saved vocalists, admin preview override.
 
-Стек: **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**.
+Стек: **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**, **Supabase**.
 
 ---
 
@@ -39,10 +39,16 @@
 - Поиск на matching-экране фильтрует список **на месте**, без редиректа.
 
 ### Producer flow
-- `/search` → brief + upload → `/results`.
-- `/compare/[id]`, `/vocalists/[id]`, Request → `/workspace/[orderId]`.
+- `/search` → brief + upload → `/results` (mock matching).
+- `/compare/[id]`, `/vocalists/[id]`, Request → `/request/[vocalistId]` → **`/my-requests`** (статус заявок).
+- Accept вокалистом → `/workspace/[orderId]`.
 - `/workspace` — список проектов; `/workspace/[orderId]` — 3 колонки (info | chat | files/actions).
+- `/dashboard?tab=projects` — **My Projects** из Supabase orders.
 - `/saved-vocalists` — сохранённые вокалисты.
+
+**E2E (проверено):** Request → Accept → Workspace → Preview → Approve → Deliver → Complete & review → отзыв на профиле.
+
+**Featured на `/home`** — демо-профили (бейдж Demo), не реальные вокалисты. Реальный тестовый вокалист — через прямую ссылку на профиль.
 
 ### Vocalist flow
 - Signup vocalist → `/vocalist/onboarding` → tags → demos → `/home`.
@@ -65,19 +71,17 @@
 
 ---
 
-## localStorage (главные ключи)
+## localStorage (осталось) и Supabase
 
-| Ключ | Назначение |
-|------|------------|
-| `voxbridge_auth_state` | Аккаунт + сессия |
+| Хранилище | Что |
+|-----------|-----|
+| **Supabase** | auth, profiles, vocalist_profiles, vocalist_requests, orders, reviews |
 | `voxbridge_upload_context` | AI vocal / brief продюсера (режим matching на `/home`) |
-| `voxbridge_producer_orders` | Заказы |
-| `voxbridge_vocalist_requests` | Заявки вокалисту |
-| `voxbridge_vocalist_profiles` | Профили вокалистов |
-| `voxbridge_vocalist_reviews` | Отзывы |
 | `voxbridge_saved_vocalists` | ID сохранённых вокалистов |
 | `voxbridge_sidebar_mode` | pinned / auto для sidebar |
 | `voxbridge_admin_role_override` | Preview role для admin |
+
+**RLS (важно):** при Accept вокалистом нужна политика `vocalist_insert_order_on_accept` — см. `docs/supabase_fix_orders_accept_rls.sql`.
 
 Подробнее: [`PROJECT_MEMO.md`](PROJECT_MEMO.md).
 
@@ -107,8 +111,19 @@
 ### 1. Frontend (Next.js)
 
 ```bash
-cd "путь\к\voxbridge"
+cd "путь/к/voxbridge"
 npm install
+```
+
+Создайте `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+NEXT_PUBLIC_VOICE_MATCH_API_URL=http://localhost:8000
+```
+
+```bash
 npm run dev
 ```
 
@@ -145,6 +160,8 @@ NEXT_PUBLIC_VOICE_MATCH_API_URL=http://localhost:8000
 | Регистрация producer | `/signup?role=producer` |
 | Home explore | `/home` (без `voxbridge_upload_context`) |
 | Upload → matching | `/search` + файл → `/home` |
+| Producer requests | `/my-requests` |
+| Producer projects | `/dashboard?tab=projects` |
 | Admin | `/login` → admin / admin → `/admin` |
 | AI Lab | `/admin/ai-voice-matching` |
 
