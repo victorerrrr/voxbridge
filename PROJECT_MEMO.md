@@ -3,7 +3,7 @@
 Записка для AI-агентов. Обновляйте при существенных изменениях архитектуры или маршрутов.
 
 **Документы для людей (handoff / переустановка ОС):**  
-[`HANDOFF_RU.md`](HANDOFF_RU.md) · [`ROADMAP_RU.md`](ROADMAP_RU.md) · [`CHANGELOG_SESSION_RU.md`](CHANGELOG_SESSION_RU.md) · [`CURSOR_BACKUP_RU.md`](CURSOR_BACKUP_RU.md)
+[`HANDOFF_FULL_2026.md`](HANDOFF_FULL_2026.md) · [`HANDOFF_RU.md`](HANDOFF_RU.md) · [`ROADMAP_RU.md`](ROADMAP_RU.md) · [`CHANGELOG_SESSION_RU.md`](CHANGELOG_SESSION_RU.md) · [`CURSOR_BACKUP_RU.md`](CURSOR_BACKUP_RU.md)
 
 ---
 

@@ -1,3 +1,10 @@
+## Session 02.07.2026
+DONE: E2E flow tested live (Tunares → Magdolina OlyaPromi): request → accept → workspace → preview → stems → review ★5 on profile. Fixed accept order producer_id bug, orders fetch without fragile joins, reviews → Supabase, workspace review modal portal + status hints, RLS SQL doc for orders accept.
+NEXT: run reviews INSERT policy SQL in Supabase if not yet; commit pushed.
+
+## Session 02.06.2026
+DONE: полный handoff `HANDOFF_FULL_2026.md` (Supabase, voice matching v5, API, scoring, git, промпт для нового чата).
+NEXT: закоммитить uncommitted diff (workspace, reviews, vocalist-profile-view); синхронизировать HANDOFF_RU.md / AGENTS.md с Supabase.
 
 ## Session 19.06.2026
 DONE: results page restored, voice tags added (1f93524), 4 orphan JSON deleted, 13/13 tests pass

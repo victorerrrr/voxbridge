@@ -1,8 +1,11 @@
 "use client";
 
 import { getStoredUser } from "@/lib/auth";
-import { createProducerOrder, getOrderById, getProducerOrders, type ProducerOrder } from "@/lib/orders";
-import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
+import { createProducerOrder, getOrderById, getOrdersForVocalist, type ProducerOrder } from "@/lib/orders";
+import {
+  getVocalistProfileById,
+  getVocalistProfileByOwnerId,
+} from "@/lib/vocalist-profile";
 import { supabase } from "@/lib/supabase-client";
 
 export type VocalistRequestStatus = "pending" | "accepted" | "declined";
@@ -185,8 +188,8 @@ export async function createVocalistRequest(
 }
 
 async function buildOrderFromRequest(request: VocalistRequest): Promise<ProducerOrder> {
-  const user = await getStoredUser();
-  const vocalistName = user?.username ?? "Vocalist";
+  const profile = await getVocalistProfileById(request.vocalistId);
+  const vocalistName = profile?.username ?? "Vocalist";
   return createProducerOrder(request.vocalistId, vocalistName, {
     projectName: request.projectName,
     description: request.description,
@@ -194,6 +197,7 @@ async function buildOrderFromRequest(request: VocalistRequest): Promise<Producer
     budget: request.budget,
     trackName: request.projectName,
     vibe: request.brief || request.description,
+    producerId: request.producerId,
   });
 }
 
@@ -249,10 +253,8 @@ export async function getActiveVocalistOrder(): Promise<ProducerOrder | undefine
     if (linked && linked.status !== "completed") return linked;
   }
 
-  const allOrders = await getProducerOrders();
-  return allOrders.find(
-    (order) => order.vocalistId === vocalistId && order.status !== "completed"
-  );
+  const vocalistOrders = await getOrdersForVocalist(vocalistId);
+  return vocalistOrders.find((order) => order.status !== "completed");
 }
 
 export const vocalistRequestStatusLabel: Record<VocalistRequestStatus, string> = {

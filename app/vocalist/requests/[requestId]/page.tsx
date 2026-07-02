@@ -77,8 +77,17 @@ function VocalistRequestDetailContent({ requestId }: { requestId: string }) {
   }
 
   const onAccept = async () => {
-    const order = await acceptVocalistRequest(request.id);
-    if (order) router.push(vocalistWorkspaceUrl(order.id));
+    try {
+      const order = await acceptVocalistRequest(request.id);
+      if (!order) {
+        alert("Не удалось создать заказ. Проверьте консоль браузера (F12).");
+        return;
+      }
+      router.push(vocalistWorkspaceUrl(order.id));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Accept failed";
+      alert(`Ошибка при принятии: ${message}`);
+    }
   };
 
   const onDecline = () => {

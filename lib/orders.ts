@@ -2,6 +2,7 @@
 
 import { getStoredUser } from "@/lib/auth";
 import { getUploadContext } from "@/lib/upload-context";
+import { getVocalistProfileById } from "@/lib/vocalist-profile";
 import { supabase } from "@/lib/supabase-client";
 
 export type OrderStatus =
@@ -40,6 +41,8 @@ export type CreateOrderOptions = {
   budget?: number;
   trackName?: string;
   vibe?: string;
+  /** When a vocalist accepts a request, the order belongs to the requesting producer. */
+  producerId?: string;
 };
 
 const listeners = new Set<() => void>();
@@ -70,18 +73,26 @@ type DbOrderRow = {
   has_stems: boolean | null;
   created_at: string;
   updated_at: string;
-  vocalist_profiles?: { users: { username: string } | null } | null;
-  users?: { username: string } | null;
 };
 
-const ORDER_SELECT =
-  "*, vocalist_profiles!orders_vocalist_profile_id_fkey(users!vocalist_profiles_owner_id_fkey(username)), users!orders_producer_id_fkey(username)";
+const ORDER_SELECT = "*";
 
-function rowToOrder(row: DbOrderRow): ProducerOrder {
+async function lookupUsername(userId: string): Promise<string | undefined> {
+  const { data } = await supabase
+    .from("user_public_profile")
+    .select("username")
+    .eq("id", userId)
+    .maybeSingle();
+  return data?.username ?? undefined;
+}
+
+async function enrichOrder(row: DbOrderRow): Promise<ProducerOrder> {
+  const profile = await getVocalistProfileById(row.vocalist_profile_id);
+  const producerName = await lookupUsername(row.producer_id);
   return {
     id: row.id,
     vocalistId: row.vocalist_profile_id,
-    vocalistName: row.vocalist_profiles?.users?.username ?? "Vocalist",
+    vocalistName: profile?.username ?? "Vocalist",
     trackName: row.track_name,
     vibe: row.vibe,
     status: row.status,
@@ -92,7 +103,7 @@ function rowToOrder(row: DbOrderRow): ProducerOrder {
     reference: row.reference ?? undefined,
     budget: row.budget ?? undefined,
     producerId: row.producer_id,
-    producerName: row.users?.username ?? undefined,
+    producerName,
     hasPreview: row.has_preview ?? false,
     hasStems: row.has_stems ?? false,
     createdAt: row.created_at,
@@ -103,12 +114,16 @@ function rowToOrder(row: DbOrderRow): ProducerOrder {
 export async function getProducerOrders(): Promise<ProducerOrder[]> {
   const user = await getStoredUser();
   if (!user) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("orders")
     .select(ORDER_SELECT)
     .eq("producer_id", user.id)
     .order("updated_at", { ascending: false });
-  return (data ?? []).map((row) => rowToOrder(row as unknown as DbOrderRow));
+  if (error) {
+    console.error("[orders] getProducerOrders:", error.message);
+    return [];
+  }
+  return Promise.all((data ?? []).map((row) => enrichOrder(row as DbOrderRow)));
 }
 
 export async function getOrderById(id: string): Promise<ProducerOrder | undefined> {
@@ -117,8 +132,11 @@ export async function getOrderById(id: string): Promise<ProducerOrder | undefine
     .select(ORDER_SELECT)
     .eq("id", id)
     .single();
-  if (error || !data) return undefined;
-  return rowToOrder(data as unknown as DbOrderRow);
+  if (error || !data) {
+    if (error) console.error("[orders] getOrderById:", error.message);
+    return undefined;
+  }
+  return enrichOrder(data as DbOrderRow);
 }
 
 export async function getCompletedOrders(): Promise<ProducerOrder[]> {
@@ -137,8 +155,9 @@ export async function createProducerOrder(
   options?: CreateOrderOptions
 ): Promise<ProducerOrder> {
   const user = await getStoredUser();
-  if (!user) {
-    throw new Error("Cannot create an order without a signed-in producer.");
+  const producerId = options?.producerId ?? user?.id;
+  if (!producerId) {
+    throw new Error("Cannot create an order without a producer.");
   }
   const upload = getUploadContext();
   const trackName =
@@ -148,7 +167,7 @@ export async function createProducerOrder(
     .from("orders")
     .insert({
       vocalist_profile_id: vocalistId,
-      producer_id: user.id,
+      producer_id: producerId,
       track_name: trackName,
       vibe:
         options?.vibe || upload?.vibe || upload?.description || options?.description ||
@@ -171,7 +190,7 @@ export async function createProducerOrder(
   }
 
   emitOrdersChange();
-  return rowToOrder(data as unknown as DbOrderRow);
+  return enrichOrder(data as DbOrderRow);
 }
 
 export async function updateProducerOrder(
@@ -196,7 +215,7 @@ export async function updateProducerOrder(
 
   if (error || !data) return null;
   emitOrdersChange();
-  return rowToOrder(data as unknown as DbOrderRow);
+  return enrichOrder(data as DbOrderRow);
 }
 
 export async function requestRevision(id: string): Promise<ProducerOrder | null> {
@@ -256,12 +275,16 @@ export async function approveDelivery(id: string): Promise<ProducerOrder | null>
 }
 
 export async function getOrdersForVocalist(vocalistId: string): Promise<ProducerOrder[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("orders")
     .select(ORDER_SELECT)
     .eq("vocalist_profile_id", vocalistId)
     .order("updated_at", { ascending: false });
-  return (data ?? []).map((row) => rowToOrder(row as unknown as DbOrderRow));
+  if (error) {
+    console.error("[orders] getOrdersForVocalist:", error.message);
+    return [];
+  }
+  return Promise.all((data ?? []).map((row) => enrichOrder(row as DbOrderRow)));
 }
 
 export async function markOrderCompleted(id: string): Promise<ProducerOrder | null> {

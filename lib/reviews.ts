@@ -1,6 +1,6 @@
 "use client";
 
-const STORAGE_KEY = "voxbridge_vocalist_reviews";
+import { supabase } from "@/lib/supabase-client";
 
 export type VocalistReview = {
   id: string;
@@ -12,51 +12,10 @@ export type VocalistReview = {
   createdAt: string;
 };
 
-const EMPTY_REVIEWS: VocalistReview[] = [];
-
 const listeners = new Set<() => void>();
-
-let cachedRaw: string | null | undefined;
-let cachedSnapshot: VocalistReview[] = EMPTY_REVIEWS;
 
 function emitChange(): void {
   listeners.forEach((listener) => listener());
-}
-
-function syncSnapshot(): VocalistReview[] {
-  if (typeof window === "undefined") return EMPTY_REVIEWS;
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === cachedRaw) return cachedSnapshot;
-
-  cachedRaw = raw;
-  if (!raw) {
-    cachedSnapshot = EMPTY_REVIEWS;
-    return cachedSnapshot;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as VocalistReview[];
-    cachedSnapshot = Array.isArray(parsed) ? parsed : EMPTY_REVIEWS;
-  } catch {
-    cachedSnapshot = EMPTY_REVIEWS;
-  }
-
-  return cachedSnapshot;
-}
-
-function readReviews(): VocalistReview[] {
-  return [...syncSnapshot()];
-}
-
-function writeReviews(reviews: VocalistReview[]): void {
-  if (typeof window === "undefined") return;
-
-  const raw = JSON.stringify(reviews);
-  window.localStorage.setItem(STORAGE_KEY, raw);
-  cachedRaw = raw;
-  cachedSnapshot = reviews;
-  emitChange();
 }
 
 export function subscribeVocalistReviews(onStoreChange: () => void): () => void {
@@ -64,31 +23,79 @@ export function subscribeVocalistReviews(onStoreChange: () => void): () => void 
   return () => listeners.delete(onStoreChange);
 }
 
-export function getVocalistReviews(): VocalistReview[] {
-  return syncSnapshot();
+type DbReviewRow = {
+  id: string;
+  order_id: string;
+  vocalist_profile_id: string;
+  producer_id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+};
+
+async function rowToReview(row: DbReviewRow): Promise<VocalistReview> {
+  const { data: producer } = await supabase
+    .from("user_public_profile")
+    .select("username")
+    .eq("id", row.producer_id)
+    .single();
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    vocalistId: row.vocalist_profile_id,
+    producerName: producer?.username ?? "Producer",
+    rating: row.rating,
+    comment: row.comment,
+    createdAt: row.created_at,
+  };
 }
 
-export function getReviewsForVocalist(vocalistId: string): VocalistReview[] {
-  return syncSnapshot().filter((review) => review.vocalistId === vocalistId);
+export async function getVocalistReviews(): Promise<VocalistReview[]> {
+  const { data, error } = await supabase
+    .from("reviews")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return Promise.all((data as DbReviewRow[]).map(rowToReview));
 }
 
-export function getAverageRating(vocalistId: string): number | null {
-  const reviews = getReviewsForVocalist(vocalistId);
+export async function getReviewsForVocalist(vocalistId: string): Promise<VocalistReview[]> {
+  const { data, error } = await supabase
+    .from("reviews")
+    .select("*")
+    .eq("vocalist_profile_id", vocalistId)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return Promise.all((data as DbReviewRow[]).map(rowToReview));
+}
+
+export async function getAverageRating(vocalistId: string): Promise<number | null> {
+  const reviews = await getReviewsForVocalist(vocalistId);
   if (reviews.length === 0) return null;
   const sum = reviews.reduce((acc, review) => acc + review.rating, 0);
   return Math.round((sum / reviews.length) * 10) / 10;
 }
 
-export function addVocalistReview(
-  input: Omit<VocalistReview, "id" | "createdAt">
-): VocalistReview {
-  const review: VocalistReview = {
-    ...input,
-    id: `rev-${Date.now().toString(36)}`,
-    createdAt: new Date().toISOString(),
-  };
-  const reviews = readReviews();
-  reviews.unshift(review);
-  writeReviews(reviews);
-  return review;
+export async function addVocalistReview(
+  input: Omit<VocalistReview, "id" | "createdAt" | "producerName"> & { producerId: string }
+): Promise<VocalistReview> {
+  const { data, error } = await supabase
+    .from("reviews")
+    .insert({
+      order_id: input.orderId,
+      vocalist_profile_id: input.vocalistId,
+      producer_id: input.producerId,
+      rating: input.rating,
+      comment: input.comment,
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error("Failed to create review.");
+  }
+
+  emitChange();
+  return rowToReview(data as DbReviewRow);
 }

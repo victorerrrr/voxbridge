@@ -281,7 +281,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const users = await getAdminUsers();
   const orders = await getProducerOrders();
   const requests = await getVocalistRequests();
-  const reviews = getVocalistReviews();
+  const reviews = await getVocalistReviews();
   const reports = getAdminReports().filter((r) => r.status === "open");
   const conversations = getAdminConversations();
 

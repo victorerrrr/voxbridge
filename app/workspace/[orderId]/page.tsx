@@ -2,6 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatedButton } from "@/components/animated-button";
 import { AdminWorkspaceShell } from "@/components/admin-workspace-shell";
 import { InternalPageShell } from "@/components/internal-page-shell";
@@ -14,7 +15,7 @@ import {
 import { VocalistWorkspace } from "@/components/vocalist-workspace";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useProducerOrder } from "@/lib/hooks/use-producer-orders";
-import { approveDelivery, markOrderCompleted, requestRevision } from "@/lib/orders";
+import { approveDelivery, markOrderCompleted, orderStatusLabel, requestRevision } from "@/lib/orders";
 import { addVocalistReview } from "@/lib/reviews";
 import { MockAudioPlayer } from "@/components/mock-audio-player";
 import { isVocalistWorkspaceSide } from "@/lib/workspace-url";
@@ -26,8 +27,10 @@ export default function WorkspacePage() {
   const [showReview, setShowReview] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [submittingReview, setSubmittingReview] = useState(false);
 
-  const { role, isAdmin, isReady, isAuthenticated } = useClientAuth();
+  const { user, role, isAdmin, isReady, isAuthenticated } = useClientAuth();
   const { order, ready } = useProducerOrder(params.orderId);
   const isAdminView = searchParams.get("admin") === "1" && isAdmin;
   const vocalistSide =
@@ -79,17 +82,31 @@ export default function WorkspacePage() {
 
   const isCompleted = order.status === "completed";
 
-  const onComplete = () => {
-    markOrderCompleted(order.id);
-    addVocalistReview({
-      orderId: order.id,
-      vocalistId: order.vocalistId,
-      producerName: "You",
-      rating,
-      comment: comment.trim() || "Great collaboration!",
-    });
-    setShowReview(false);
+  const onComplete = async () => {
+    setReviewError(null);
+    setSubmittingReview(true);
+    try {
+      await markOrderCompleted(order.id);
+      if (user) {
+        await addVocalistReview({
+          orderId: order.id,
+          vocalistId: order.vocalistId,
+          producerId: user.id,
+          rating,
+          comment: comment.trim() || "Great collaboration!",
+        });
+      }
+      setShowReview(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to submit review.";
+      setReviewError(message);
+      alert(`Ошибка отзыва: ${message}`);
+    } finally {
+      setSubmittingReview(false);
+    }
   };
+
+  const canComplete = !isCompleted && order.status === "delivery_ready";
 
   const workspaceBody = (
     <>
@@ -151,6 +168,19 @@ export default function WorkspacePage() {
             </WorkspacePanel>
 
             <WorkspacePanel title="Actions">
+              <p className="mb-3 text-xs text-zinc-500">
+                Status: <span className="text-zinc-300">{orderStatusLabel[order.status]}</span>
+                {order.status === "preview_approved" && (
+                  <span className="mt-1 block text-amber-200/90">
+                    Waiting for vocalist to deliver stems.
+                  </span>
+                )}
+                {order.status === "preview_pending" && (
+                  <span className="mt-1 block text-amber-200/90">
+                    Approve preview when ready, or request a revision.
+                  </span>
+                )}
+              </p>
               <div className="flex flex-col gap-2">
                 <AnimatedButton
                   type="button"
@@ -177,8 +207,18 @@ export default function WorkspacePage() {
                 <AnimatedButton
                   type="button"
                   variant="primary"
-                  disabled={isCompleted || order.status !== "delivery_ready"}
-                  onClick={() => setShowReview(true)}
+                  disabled={!canComplete}
+                  onClick={() => {
+                    if (!canComplete) {
+                      alert(
+                        order.status === "preview_approved"
+                          ? "Сначала Magdolina должна нажать Deliver stems."
+                          : "Завершение доступно после сдачи stems (статус Delivery ready)."
+                      );
+                      return;
+                    }
+                    setShowReview(true);
+                  }}
                   className="rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40"
                 >
                   Mark completed & review
@@ -192,9 +232,11 @@ export default function WorkspacePage() {
         }
       />
 
-      {showReview && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6">
+      {showReview &&
+        typeof document !== "undefined" &&
+        createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
             <h3 className="text-lg font-semibold">Rate {order.vocalistName}</h3>
             <p className="mt-1 text-sm text-zinc-400">Your review builds their reputation on VoxBridge.</p>
             <label className="mt-4 block text-sm text-zinc-300">
@@ -218,18 +260,23 @@ export default function WorkspacePage() {
               placeholder="Optional comment"
               className="mt-3 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm"
             />
+            {reviewError && (
+              <p className="mt-2 text-sm text-rose-300">{reviewError}</p>
+            )}
             <div className="mt-4 flex gap-2">
               <AnimatedButton
                 type="button"
                 variant="primary"
+                disabled={submittingReview}
                 onClick={onComplete}
-                className="rounded-lg px-4 py-2 text-sm font-medium"
+                className="rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
               >
-                Submit review
+                {submittingReview ? "Saving…" : "Submit review"}
               </AnimatedButton>
               <AnimatedButton
                 type="button"
                 variant="secondary"
+                disabled={submittingReview}
                 onClick={() => setShowReview(false)}
                 className="rounded-lg px-4 py-2 text-sm"
               >
@@ -237,7 +284,8 @@ export default function WorkspacePage() {
               </AnimatedButton>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

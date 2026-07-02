@@ -16,7 +16,12 @@ import {
   subscribeVocalistProfiles,
   type VocalistProfile,
 } from "@/lib/vocalist-profile";
-import { getAverageRating, getReviewsForVocalist, subscribeVocalistReviews } from "@/lib/reviews";
+import {
+  getAverageRating,
+  getReviewsForVocalist,
+  subscribeVocalistReviews,
+  type VocalistReview,
+} from "@/lib/reviews";
 import { ExternalLinksDisplay } from "@/components/external-links-section";
 
 type VocalistProfileViewProps = {
@@ -115,8 +120,20 @@ function StoredVocalistProfile({
   mock?: Vocalist;
 }) {
   const { user, isReady } = useClientAuth();
-  const reviews = getReviewsForVocalist(profile.id);
-  const averageRating = getAverageRating(profile.id);
+  const [reviews, setReviews] = useState<VocalistReview[]>([]);
+  const [averageRating, setAverageRating] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getReviewsForVocalist(profile.id).then((r) => {
+      if (!cancelled) setReviews(r);
+    });
+    getAverageRating(profile.id).then((avg) => {
+      if (!cancelled) setAverageRating(avg);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.id]);
   const [completedCount, setCompletedCount] = useState(0);
   useEffect(() => {
     let cancelled = false;

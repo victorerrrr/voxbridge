@@ -83,9 +83,15 @@ function VocalistOrdersContent() {
                 key={request.id}
                 request={request}
                 onAccept={() => {
-                  acceptVocalistRequest(request.id).then((order) => {
-                    if (order) router.push(vocalistWorkspaceUrl(order.id));
-                  });
+                  acceptVocalistRequest(request.id)
+                    .then((order) => {
+                      if (order) router.push(vocalistWorkspaceUrl(order.id));
+                      else alert("Не удалось создать заказ.");
+                    })
+                    .catch((err) => {
+                      const message = err instanceof Error ? err.message : "Accept failed";
+                      alert(`Ошибка: ${message}`);
+                    });
                 }}
                 onDecline={() => declineVocalistRequest(request.id)}
               />
