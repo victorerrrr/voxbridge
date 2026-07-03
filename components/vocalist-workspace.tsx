@@ -1,13 +1,13 @@
 "use client";
 
 import { AnimatedButton } from "@/components/animated-button";
+import { OrderWorkspaceFiles } from "@/components/order-workspace-files";
 import {
-  FileUploadPlaceholder,
   OrderWorkspaceLayout,
   WorkspaceChat,
   WorkspacePanel,
 } from "@/components/order-workspace-layout";
-import { MockAudioPlayer } from "@/components/mock-audio-player";
+import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useProducerOrder } from "@/lib/hooks/use-producer-orders";
 import { submitFinalDelivery, submitPreview, submitRevision } from "@/lib/orders";
 
@@ -16,9 +16,13 @@ type VocalistWorkspaceProps = {
 };
 
 export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
+  const { user } = useClientAuth();
   const { order } = useProducerOrder(orderId);
 
   if (!order) return null;
+
+  const producerDisplay = order.producerName || "Producer";
+  const selfDisplay = user?.username || order.vocalistName || "Vocalist";
 
   const canSubmitPreview = order.status === "in_progress" || order.status === "revision_requested";
   const canSubmitRevision = order.status === "revision_requested";
@@ -31,7 +35,9 @@ export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
       backLabel="Orders"
       order={order}
       counterpartyLabel="Producer"
-      counterpartyName={order.producerName || "Producer"}
+      counterpartyName={producerDisplay}
+      viewerRole="vocalist"
+      selfName={selfDisplay}
       leftExtra={
         order.budget != null ? (
           <p className="text-xs text-zinc-500">
@@ -43,7 +49,7 @@ export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
         <WorkspaceChat
           messages={[
             {
-              from: order.producerName || "Producer",
+              from: producerDisplay,
               message: "Looking forward to your take — match the reference energy in the hook.",
             },
             { from: "You", message: "On it. First preview coming soon.", isSelf: true },
@@ -53,23 +59,7 @@ export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
       }
       right={
         <>
-          <WorkspacePanel title="AI vocal reference" className="border-cyan-400/20 bg-cyan-500/5">
-            <MockAudioPlayer
-              title={order.reference || `${order.projectName || order.trackName} reference`}
-              subtitle="Producer AI vocal reference (mock)"
-            />
-          </WorkspacePanel>
-
-          <WorkspacePanel title="Files">
-            <ul className="space-y-2 text-sm text-zinc-300">
-              <li className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
-                {order.hasPreview ? "vocal-preview-v1.wav" : "vocal-preview-v1.wav (pending)"}
-              </li>
-              <li className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
-                {order.hasStems ? "final-stems.zip" : "final-stems.zip (pending)"}
-              </li>
-            </ul>
-          </WorkspacePanel>
+          <OrderWorkspaceFiles order={order} role="vocalist" />
 
           <WorkspacePanel title="Actions">
             {waitingApproval && (
@@ -78,7 +68,6 @@ export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
               </p>
             )}
             <div className="flex flex-col gap-2">
-              <FileUploadPlaceholder label="Upload preview" />
               {canSubmitPreview && !canSubmitRevision && !waitingApproval && (
                 <AnimatedButton
                   type="button"
@@ -90,19 +79,15 @@ export function VocalistWorkspace({ orderId }: VocalistWorkspaceProps) {
                 </AnimatedButton>
               )}
               {canSubmitRevision && (
-                <>
-                  <FileUploadPlaceholder label="Upload revision" />
-                  <AnimatedButton
-                    type="button"
-                    variant="primary"
-                    onClick={() => submitRevision(order.id)}
-                    className="rounded-lg px-4 py-2.5 text-sm font-medium"
-                  >
-                    Upload revision
-                  </AnimatedButton>
-                </>
+                <AnimatedButton
+                  type="button"
+                  variant="primary"
+                  onClick={() => submitRevision(order.id)}
+                  className="rounded-lg px-4 py-2.5 text-sm font-medium"
+                >
+                  Submit revision
+                </AnimatedButton>
               )}
-              <FileUploadPlaceholder label="Upload stems" />
               {canSubmitFinal && (
                 <AnimatedButton
                   type="button"

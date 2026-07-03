@@ -42,11 +42,17 @@ The core idea:
 
 See **PROJECT_MEMO.md** and **HANDOFF_RU.md** for full route map.
 
+## Product strategy
+- **Differentiator:** acoustic AI vocal matching (user calibrates with real vocalists).
+- **Without matching:** improve marketplace parity — see **`docs/COMPETITIVE_ANALYSIS.md`** (living doc; update status after sprints).
+- Discovery: Match (primary) · Search by name · Browse later (not Home hero).
+
 ## Data layer (Supabase)
 - Auth + `profiles` / `user_public_profile`
 - `vocalist_profiles`, `vocalist_requests`, `orders`, `reviews`
 - Producer order flow: Request → Accept → Workspace → Review (E2E tested)
 - RLS: vocalist accept needs `vocalist_insert_order_on_accept` — see `docs/supabase_fix_orders_accept_rls.sql`
+- Order files: `order_files` table + `order-files` bucket — see `docs/supabase_order_files_storage.sql` (run once in SQL Editor)
 
 Still in **localStorage**: upload context (`voxbridge_upload_context`), admin role override, some admin UI prefs.
 

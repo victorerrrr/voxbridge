@@ -1,12 +1,13 @@
 "use client";
 
 import { AnimatedButton } from "@/components/animated-button";
+import { HomeVocalistNameSearch } from "@/components/home/home-vocalist-name-search";
 
 type HomeLandingHeroProps = {
-  onBrowse: () => void;
+  onFindByName: () => void;
 };
 
-export function HomeLandingHero({ onBrowse }: HomeLandingHeroProps) {
+export function HomeLandingHero({ onFindByName }: HomeLandingHeroProps) {
   return (
     <section className="relative shrink-0 overflow-hidden px-5 py-14 md:px-8 md:py-20 lg:py-24">
       <GlowOrb className="left-1/4 top-8 bg-purple-500/20" />
@@ -33,12 +34,14 @@ export function HomeLandingHero({ onBrowse }: HomeLandingHeroProps) {
           <AnimatedButton
             type="button"
             variant="secondary"
-            onClick={onBrowse}
+            onClick={onFindByName}
             className="w-full rounded-xl px-6 py-3 text-sm text-zinc-400 sm:w-auto"
           >
-            Browse vocalists
+            Find vocalist by name
           </AnimatedButton>
         </div>
+
+        <HomeVocalistNameSearch className="mx-auto mt-10 max-w-lg" />
       </div>
     </section>
   );

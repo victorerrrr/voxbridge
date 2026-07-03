@@ -256,6 +256,63 @@ export async function getVocalistProfileById(id: string): Promise<VocalistProfil
   return rowToProfile(row as unknown as DbVocalistProfileRow, userJoin, demos ?? []);
 }
 
+export type RegisteredVocalistSummary = {
+  id: string;
+  username: string;
+  bio: string;
+  genres: string[];
+  vocalRange: string;
+  averageRating: number | null;
+  reviewCount: number;
+};
+
+export async function listRegisteredVocalists(): Promise<RegisteredVocalistSummary[]> {
+  const { data, error } = await supabase
+    .from("vocalist_profiles")
+    .select("id, owner_id, bio, genres, vocal_range, tags_genres")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    console.error("[vocalist-profile] listRegisteredVocalists:", error.message);
+    return [];
+  }
+
+  const rows = (data ?? []) as Pick<
+    DbVocalistProfileRow,
+    "id" | "owner_id" | "bio" | "genres" | "vocal_range" | "tags_genres"
+  >[];
+
+  const summaries = await Promise.all(
+    rows.map(async (row) => {
+      const userJoin = await fetchUserPublicProfile(row.owner_id);
+      const { data: reviewRows } = await supabase
+        .from("reviews")
+        .select("rating")
+        .eq("vocalist_profile_id", row.id);
+      const ratings = (reviewRows ?? []).map((r) => r.rating as number);
+      const averageRating =
+        ratings.length > 0
+          ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+          : null;
+      const genreList = [...new Set([...(row.genres ?? []), ...(row.tags_genres ?? [])])].slice(
+        0,
+        4
+      );
+
+      return {
+        id: row.id,
+        username: userJoin.username || "Vocalist",
+        bio: row.bio,
+        genres: genreList,
+        vocalRange: row.vocal_range,
+        averageRating,
+        reviewCount: ratings.length,
+      };
+    })
+  );
+
+  return summaries.sort((a, b) => a.username.localeCompare(b.username));
+}
+
 export async function getVocalistProfileByOwnerId(
   ownerId: string
 ): Promise<VocalistProfile | undefined> {

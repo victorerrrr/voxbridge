@@ -107,8 +107,10 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
     [router]
   );
 
-  const scrollToFeatured = useCallback(() => {
-    document.getElementById("home-featured-vocalists")?.scrollIntoView({ behavior: "smooth" });
+  const focusVocalistSearch = useCallback(() => {
+    const input = document.getElementById("home-vocalist-search");
+    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => input?.focus(), 300);
   }, []);
 
   const listCountLabel = `${filteredTracks.length} match${filteredTracks.length === 1 ? "" : "es"}`;
@@ -150,7 +152,7 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
             onViewProfile={handleViewProfile}
           />
         ) : (
-          <ExploreLanding role={user.role} userId={user.id} onBrowse={scrollToFeatured} />
+          <ExploreLanding role={user.role} userId={user.id} onFindByName={focusVocalistSearch} />
         )}
       </div>
     </div>
@@ -160,15 +162,15 @@ export function HomeWorkspace({ user }: HomeWorkspaceProps) {
 function ExploreLanding({
   role,
   userId,
-  onBrowse,
+  onFindByName,
 }: {
   role: UserRole;
   userId: string;
-  onBrowse: () => void;
+  onFindByName: () => void;
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <HomeLandingHero onBrowse={onBrowse} />
+      <HomeLandingHero onFindByName={onFindByName} />
       <HomeTransformationDemo />
       <HomeFeaturedVocalists />
       <HomeTransformationsFeed />

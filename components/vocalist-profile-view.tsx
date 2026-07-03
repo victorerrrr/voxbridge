@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { RequestVocalistButton } from "@/components/request-vocalist-button";
+import { ShareProfileButton } from "@/components/share-profile-button";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useMounted } from "@/lib/hooks/use-mounted";
 import { getVocalistById, type Vocalist } from "@/lib/mockVocalists";
@@ -404,7 +405,12 @@ function ProfileLayout({
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        {!isOwner && !isDemo && <RequestVocalistButton vocalistId={vocalistId} vocalistName={vocalistName} />}
+        {!isDemo && (
+          <ShareProfileButton vocalistId={vocalistId} vocalistName={vocalistName || name} />
+        )}
+        {!isOwner && !isDemo && (
+          <RequestVocalistButton vocalistId={vocalistId} vocalistName={vocalistName} />
+        )}
         {isOwner && (
           <>
             <AnimatedButton href="/vocalist/demos" variant="secondary" className="rounded-lg px-5 py-2.5 text-sm">

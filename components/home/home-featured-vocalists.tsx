@@ -18,8 +18,7 @@ export function HomeFeaturedVocalists() {
           Featured vocalists
         </h2>
         <p className="mt-2 max-w-md text-vox-secondary">
-          Demo profiles for browsing the UI — not real registered vocalists. Use a real profile
-          (e.g. from search or direct link) to send a request.
+          Demo profiles for browsing the UI — not real registered vocalists.
         </p>
 
         <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

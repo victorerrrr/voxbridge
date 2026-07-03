@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AnimatedButton } from "@/components/animated-button";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { useProducerOrders } from "@/lib/hooks/use-producer-orders";
-import { getOrdersForVocalist } from "@/lib/orders";
+import { useVocalistOrders } from "@/lib/hooks/use-vocalist-orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
 import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { getVocalistProfileByOwnerId } from "@/lib/vocalist-profile";
@@ -23,9 +23,9 @@ export default function WorkspaceListPage() {
 
 function WorkspaceListContent() {
   const { user, role, isReady } = useClientAuth();
-  const producerOrders = useProducerOrders();
-  const [vocalistOrders, setVocalistOrders] = useState<typeof producerOrders>([]);
   const [vocalistId, setVocalistId] = useState("");
+  const producerOrders = useProducerOrders();
+  const vocalistOrders = useVocalistOrders(vocalistId);
 
   useEffect(() => {
     if (!user) {
@@ -40,20 +40,6 @@ function WorkspaceListContent() {
       cancelled = true;
     };
   }, [user]);
-
-  useEffect(() => {
-    if (role !== "vocalist" || !vocalistId) {
-      setVocalistOrders([]);
-      return;
-    }
-    let cancelled = false;
-    getOrdersForVocalist(vocalistId).then((list) => {
-      if (!cancelled) setVocalistOrders(list);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [role, vocalistId]);
 
   if (!isReady) {
     return <p className="text-vox-muted">Loading workspace...</p>;

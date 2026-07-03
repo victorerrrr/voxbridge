@@ -11,6 +11,7 @@ import {
   type UserRole,
 } from "@/lib/auth";
 import { InternalBackground } from "@/components/internal-background";
+import { VocalistNameSearch } from "@/components/vocalist-name-search";
 import { isHomeActiveOrderStatus } from "@/components/home/home-order-status";
 import { getOrdersForVocalist } from "@/lib/orders";
 import { vocalistWorkspaceUrl } from "@/lib/workspace-url";
@@ -285,24 +286,29 @@ export default function InternalShell({
       <InternalBackground />
 
       <div className="fixed left-0 right-0 top-0 z-[70] flex items-center justify-between gap-3 px-4 py-4 md:px-6">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {isMobile && (
             <button
               type="button"
               onClick={openMobileSidebar}
               aria-label="Open menu"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-zinc-950/80 text-zinc-100 backdrop-blur-xl"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-zinc-950/80 text-zinc-100 backdrop-blur-xl"
             >
               <MenuIcon />
             </button>
           )}
           <Link
             href="/home"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-zinc-950/80 px-3.5 py-2 text-sm font-semibold tracking-wide text-white backdrop-blur-xl transition hover:border-purple-300/60"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/20 bg-zinc-950/80 px-3.5 py-2 text-sm font-semibold tracking-wide text-white backdrop-blur-xl transition hover:border-purple-300/60"
           >
             <span className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-purple-400 via-blue-400 to-cyan-300" />
             VoxBridge
           </Link>
+          {role === "producer" && (
+            <div className="hidden min-w-0 flex-1 md:block md:max-w-sm lg:max-w-md">
+              <VocalistNameSearch variant="header" onNavigate={closeMobileSidebar} />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && (
@@ -409,6 +415,11 @@ export default function InternalShell({
           )}
 
           <nav className={`flex-1 space-y-5 overflow-y-auto px-4 ${isMobile ? "pt-20" : ""}`}>
+            {role === "producer" && (
+              <div className="md:hidden">
+                <VocalistNameSearch variant="sidebar" onNavigate={closeMobileSidebar} />
+              </div>
+            )}
             {menuGroups.map((group) => (
               <div key={group.key} className="space-y-1.5">
                 <p className="px-1 text-[11px] uppercase tracking-[0.18em] text-zinc-500">{group.title}</p>

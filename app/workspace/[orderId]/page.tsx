@@ -6,8 +6,8 @@ import { createPortal } from "react-dom";
 import { AnimatedButton } from "@/components/animated-button";
 import { AdminWorkspaceShell } from "@/components/admin-workspace-shell";
 import { InternalPageShell } from "@/components/internal-page-shell";
+import { OrderWorkspaceFiles } from "@/components/order-workspace-files";
 import {
-  FileUploadPlaceholder,
   OrderWorkspaceLayout,
   WorkspaceChat,
   WorkspacePanel,
@@ -17,7 +17,6 @@ import { useClientAuth } from "@/lib/hooks/use-client-auth";
 import { useProducerOrder } from "@/lib/hooks/use-producer-orders";
 import { approveDelivery, markOrderCompleted, orderStatusLabel, requestRevision } from "@/lib/orders";
 import { addVocalistReview } from "@/lib/reviews";
-import { MockAudioPlayer } from "@/components/mock-audio-player";
 import { isVocalistWorkspaceSide } from "@/lib/workspace-url";
 
 export default function WorkspacePage() {
@@ -118,6 +117,8 @@ export default function WorkspacePage() {
         order={order}
         counterpartyLabel="Vocalist"
         counterpartyName={order.vocalistName}
+        viewerRole={isAdminView ? undefined : "producer"}
+        selfName={user?.username}
         leftExtra={
           <AnimatedButton
             href={`/vocalists/${order.vocalistId}`}
@@ -145,29 +146,7 @@ export default function WorkspacePage() {
         }
         right={
           <>
-            <WorkspacePanel title="AI vocal preview" className="border-cyan-400/20 bg-cyan-500/5">
-              <MockAudioPlayer
-                title={order.reference || order.trackName}
-                subtitle="Your AI vocal reference (mock)"
-              />
-            </WorkspacePanel>
-
-            <WorkspacePanel title="Uploaded files">
-              <ul className="space-y-2 text-sm text-zinc-300">
-                <li className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
-                  ai-reference-demo.mp3
-                </li>
-                <li className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
-                  {order.hasPreview ? "vocal-preview-v1.wav (received)" : "vocal-preview-v1.wav (pending)"}
-                </li>
-                <li className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
-                  {order.hasStems ? "final-stems.zip (delivered)" : "final-stems.zip (pending)"}
-                </li>
-              </ul>
-              <div className="mt-3">
-                <FileUploadPlaceholder label="Upload preview" />
-              </div>
-            </WorkspacePanel>
+            <OrderWorkspaceFiles order={order} role="producer" />
 
             <WorkspacePanel title="Actions">
               <p className="mb-3 text-xs text-zinc-500">
@@ -205,7 +184,6 @@ export default function WorkspacePage() {
                 >
                   Approve preview
                 </AnimatedButton>
-                <FileUploadPlaceholder label="Upload stems" />
                 <AnimatedButton
                   type="button"
                   variant="primary"

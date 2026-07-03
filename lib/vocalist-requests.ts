@@ -67,12 +67,20 @@ type DbRequestRow = {
   deadline: string | null;
   order_id: string | null;
   created_at: string;
-  users?: { username: string } | null;
 };
 
-const REQUEST_SELECT = "*, users!vocalist_requests_producer_id_fkey(username)";
+const REQUEST_SELECT = "*";
 
-function rowToRequest(row: DbRequestRow): VocalistRequest {
+async function lookupProducerUsername(producerId: string): Promise<string> {
+  const { data } = await supabase
+    .from("user_public_profile")
+    .select("username")
+    .eq("id", producerId)
+    .maybeSingle();
+  return data?.username ?? "Producer";
+}
+
+function rowToRequest(row: DbRequestRow, producerName: string): VocalistRequest {
   return {
     id: row.id,
     vocalistId: row.vocalist_profile_id,
@@ -82,7 +90,7 @@ function rowToRequest(row: DbRequestRow): VocalistRequest {
     brief: row.brief,
     reference: row.reference,
     budget: row.budget,
-    producerName: row.users?.username ?? "Producer",
+    producerName,
     status: row.status,
     createdAt: row.created_at,
     orderId: row.order_id ?? undefined,
@@ -96,15 +104,30 @@ function rowToRequest(row: DbRequestRow): VocalistRequest {
   };
 }
 
+async function enrichRequests(rows: DbRequestRow[]): Promise<VocalistRequest[]> {
+  const names = new Map<string, string>();
+  const uniqueProducerIds = [...new Set(rows.map((row) => row.producer_id))];
+  await Promise.all(
+    uniqueProducerIds.map(async (producerId) => {
+      names.set(producerId, await lookupProducerUsername(producerId));
+    })
+  );
+  return rows.map((row) => rowToRequest(row, names.get(row.producer_id) ?? "Producer"));
+}
+
 export async function getVocalistRequests(): Promise<VocalistRequest[]> {
   const user = await getStoredUser();
   if (!user) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("vocalist_requests")
     .select(REQUEST_SELECT)
     .eq("producer_id", user.id)
     .order("created_at", { ascending: false });
-  return (data ?? []).map((row) => rowToRequest(row as unknown as DbRequestRow));
+  if (error) {
+    console.error("[vocalist-requests] getVocalistRequests:", error.message);
+    throw new Error(error.message);
+  }
+  return (data ?? []).map((row) => rowToRequest(row as DbRequestRow, user.username));
 }
 
 export async function getVocalistRequestById(requestId: string): Promise<VocalistRequest | undefined> {
@@ -114,7 +137,9 @@ export async function getVocalistRequestById(requestId: string): Promise<Vocalis
     .eq("id", requestId)
     .single();
   if (error || !data) return undefined;
-  return rowToRequest(data as unknown as DbRequestRow);
+  const row = data as DbRequestRow;
+  const producerName = await lookupProducerUsername(row.producer_id);
+  return rowToRequest(row, producerName);
 }
 
 export async function getRequestsForVocalist(
@@ -122,13 +147,17 @@ export async function getRequestsForVocalist(
   statuses?: VocalistRequestStatus[]
 ): Promise<VocalistRequest[]> {
   const allowed = statuses ?? ["pending", "accepted", "declined"];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("vocalist_requests")
     .select(REQUEST_SELECT)
     .eq("vocalist_profile_id", vocalistId)
     .in("status", allowed)
     .order("created_at", { ascending: false });
-  return (data ?? []).map((row) => rowToRequest(row as unknown as DbRequestRow));
+  if (error) {
+    console.error("[vocalist-requests] getRequestsForVocalist:", error.message);
+    return [];
+  }
+  return enrichRequests((data ?? []) as DbRequestRow[]);
 }
 
 export async function getPendingRequestsForVocalist(vocalistId: string): Promise<VocalistRequest[]> {
@@ -184,7 +213,7 @@ export async function createVocalistRequest(
     throw new Error(error?.message ?? "Failed to create vocalist request.");
   }
   emitChange();
-  return rowToRequest(data as unknown as DbRequestRow);
+  return rowToRequest(data as DbRequestRow, user.username);
 }
 
 async function buildOrderFromRequest(request: VocalistRequest): Promise<ProducerOrder> {

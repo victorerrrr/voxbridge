@@ -23,7 +23,7 @@ export default function MyRequestsPage() {
 function MyRequestsContent() {
   const router = useRouter();
   const { user, role, isReady, isAuthenticated } = useClientAuth();
-  const requests = useProducerRequests();
+  const { requests, loading, error } = useProducerRequests();
 
   useEffect(() => {
     if (!isReady) return;
@@ -62,19 +62,34 @@ function MyRequestsContent() {
         </AnimatedButton>
       </div>
 
-      {requests.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-zinc-400">Loading your requests from Supabase…</p>
+      ) : error ? (
+        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
+          Could not load requests: {error}
+        </div>
+      ) : requests.length === 0 ? (
         <div className="rounded-xl border border-dashed border-white/15 bg-zinc-950/40 px-6 py-12 text-center">
           <p className="text-vox-secondary">No requests yet.</p>
           <p className="mt-2 text-sm text-zinc-500">
-            Open a real vocalist profile and use Request Vocalist to send a brief.
+            Search for a vocalist by name on Home, then use Request Vocalist on their profile.
           </p>
-          <AnimatedButton
-            href="/home"
-            variant="primary"
-            className="mt-4 inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
-          >
-            Go to Home
-          </AnimatedButton>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <AnimatedButton
+              href="/home#home-vocalist-search-section"
+              variant="primary"
+              className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+            >
+              Browse vocalists
+            </AnimatedButton>
+            <AnimatedButton
+              href="/workspace"
+              variant="secondary"
+              className="inline-flex rounded-lg px-5 py-2.5 text-sm font-medium"
+            >
+              Workspace
+            </AnimatedButton>
+          </div>
         </div>
       ) : (
         <>

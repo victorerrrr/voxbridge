@@ -109,11 +109,45 @@
 
 ---
 
+## Фаза 13 — Supabase order flow + discovery без каталога на Home (июнь 2026)
+
+**Ветка:** `home-rebuild-v2` · последний push: `c3fda26` (My requests + UX polish).
+
+### Supabase (live)
+- Request → Accept → Workspace → Preview → Approve → Deliver → Complete & review — **E2E проверено** в двух браузерах.
+- `orders`, `reviews`, `vocalist_requests` в Supabase; RLS fix: `docs/supabase_fix_orders_accept_rls.sql`.
+- Коммиты: `95a9ed6` (order flow + reviews), `c3fda26` (My requests).
+
+### Producer UX
+- `/my-requests` — Pending / Accepted / Declined; ссылка в sidebar.
+- Поиск **по имени** (не каталог на Home): hero + global nav (`vocalist-name-search`, `listRegisteredVocalists`).
+- Share profile на `/vocalists/[id]`.
+- Workspace: подписи Vocalist/Producer workspace, counterparty в sidebar.
+
+### Freshness (два окна без F5 каждый раз)
+- `use-refetch-on-visible`, `use-poll-while-visible` (~10 с) в hooks orders/requests.
+- `use-vocalist-orders` для `/workspace` (раньше one-shot fetch).
+
+### Стратегия
+- `docs/COMPETITIVE_ANALYSIS.md` — живой анализ vs SoundBetter/Voices/Suno; roadmap **без матчинга** (файлы, escrow, notifications, saved в Supabase).
+- Матчинг — зона пользователя (калибровка вокалистов); продуктовый `/results` пока mock.
+
+### Тест-аккаунты
+| Роль | Имя | ID |
+|------|-----|-----|
+| Producer | Tunares | `982cf288-92e5-447d-bdf6-bb16f5b735ee` |
+| Vocalist | Magdolina | profile `4c369e4f-5c33-474a-a2bc-4b7c929ccfa2` |
+
+### Незакоммичено (на завтра)
+Поиск по имени, share, polling hooks, workspace labels, `COMPETITIVE_ANALYSIS.md`, правки `AGENTS.md` — см. `git status`.
+
+---
+
 ## Как использовать с новым агентом
 
-1. Дайте агенту: `PROJECT_MEMO.md` + `AGENTS.md` + при необходимости этот CHANGELOG.
-2. Укажите ветку: обычно `home-rebuild-v2` для актуального home.
-3. Напомните: **no Supabase**, **localStorage only**, unless asked.
+1. Дайте агенту: `PROJECT_MEMO.md` + `AGENTS.md` + `docs/COMPETITIVE_ANALYSIS.md` + при необходимости этот CHANGELOG.
+2. Укажите ветку: **`home-rebuild-v2`**.
+3. Supabase **live** для orders/requests/reviews; mock — featured на Home и `/results` matching.
 
 ---
 

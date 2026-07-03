@@ -1,7 +1,7 @@
 # HANDOFF — VoxBridge (перед переустановкой Windows)
 
 Документ для **вас** и для восстановления проекта без потери контекста.  
-Дата сверки: май 2026.
+Дата сверки: **2 июня 2026**.
 
 ---
 
@@ -41,6 +41,8 @@
 ### Producer flow
 - `/search` → brief + upload → `/results` (mock matching).
 - `/compare/[id]`, `/vocalists/[id]`, Request → `/request/[vocalistId]` → **`/my-requests`** (статус заявок).
+- **Поиск по имени** в header (md+) и на Home hero — реальные зарегистрированные вокалисты (не demo).
+- **Share profile** на странице вокалиста.
 - Accept вокалистом → `/workspace/[orderId]`.
 - `/workspace` — список проектов; `/workspace/[orderId]` — 3 колонки (info | chat | files/actions).
 - `/dashboard?tab=projects` — **My Projects** из Supabase orders.
@@ -48,7 +50,9 @@
 
 **E2E (проверено):** Request → Accept → Workspace → Preview → Approve → Deliver → Complete & review → отзыв на профиле.
 
-**Featured на `/home`** — демо-профили (бейдж Demo), не реальные вокалисты. Реальный тестовый вокалист — через прямую ссылку на профиль.
+**Featured на `/home`** — демо-профили (бейдж Demo), не реальные вокалисты. Реальные — через **поиск по имени**, workspace, my-requests.
+
+**Тест:** Producer **Tunares** + Vocalist **Magdolina** (два браузера). Обновление данных ~10 с polling или refetch при фокусе вкладки.
 
 ### Vocalist flow
 - Signup vocalist → `/vocalist/onboarding` → tags → demos → `/home`.
@@ -190,9 +194,19 @@ NEXT_PUBLIC_VOICE_MATCH_API_URL=http://localhost:8000
 |------|----------|
 | [`PROJECT_MEMO.md`](PROJECT_MEMO.md) | AI-агенты в Cursor (техническая карта) |
 | [`ROADMAP_RU.md`](ROADMAP_RU.md) | Планы на будущее |
+| [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md) | Анализ vs рынок + backlog без матчинга |
 | [`CHANGELOG_SESSION_RU.md`](CHANGELOG_SESSION_RU.md) | Хронология доработок в сессиях |
 | [`CURSOR_BACKUP_RU.md`](CURSOR_BACKUP_RU.md) | Как сохранить чаты Cursor |
-| [`AGENTS.md`](AGENTS.md) | Краткие правила (частично устарел) |
+| [`AGENTS.md`](AGENTS.md) | Правила для AI-агента (Supabase live, стратегия) |
+
+---
+
+## Продолжить (3 июл 2026)
+
+1. **Запустить SQL** в Supabase: `docs/supabase_order_files_storage.sql` (таблица + bucket + RLS).
+2. **Закоммитить** всё незакоммиченное (search, polling, files…) — по запросу.
+3. **Проверить E2E с файлами:** Tunares загружает reference → Magdolina preview → stems.
+4. Следующий P0: Stripe escrow или notifications.
 
 ---
 

@@ -10,6 +10,10 @@ type OrderWorkspaceLayoutProps = {
   order: ProducerOrder;
   counterpartyLabel: string;
   counterpartyName: string;
+  /** Who is viewing — controls header badge and "you" row in the sidebar. */
+  viewerRole?: "producer" | "vocalist";
+  /** Display name of the signed-in user (e.g. Magdolina, Tunares). */
+  selfName?: string;
   leftExtra?: ReactNode;
   center: ReactNode;
   right: ReactNode;
@@ -57,11 +61,20 @@ export function OrderWorkspaceLayout({
   order,
   counterpartyLabel,
   counterpartyName,
+  viewerRole,
+  selfName,
   leftExtra,
   center,
   right,
 }: OrderWorkspaceLayoutProps) {
   const title = order.projectName || order.trackName;
+  const vocalistName = order.vocalistName || "Vocalist";
+  const producerName = order.producerName || (counterpartyLabel === "Producer" ? counterpartyName : "Producer");
+  const displayCounterparty =
+    viewerRole === "vocalist" ? producerName : vocalistName;
+  const displaySelf =
+    selfName ||
+    (viewerRole === "vocalist" ? vocalistName : viewerRole === "producer" ? producerName : undefined);
   const [leftWidth, setLeftWidth] = useState(224);
   const [rightWidth, setRightWidth] = useState(256);
 
@@ -75,10 +88,30 @@ export function OrderWorkspaceLayout({
 
   return (
     <div className="flex h-[calc(100vh-8rem)] min-h-[32rem] flex-col gap-3 md:h-[calc(100vh-7rem)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
-        <Link href={backHref} className="text-sm text-zinc-400 transition hover:text-zinc-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+        <Link href={backHref} className="shrink-0 text-sm text-zinc-400 transition hover:text-zinc-200">
           ← {backLabel}
         </Link>
+        <div className="min-w-0 flex-1 px-2 text-center md:text-left">
+          {viewerRole && (
+            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-purple-300/90">
+              {viewerRole === "vocalist" ? "Vocalist workspace" : "Producer workspace"}
+            </p>
+          )}
+          <p className="mt-0.5 truncate text-sm font-semibold text-white md:text-base">
+            {title}
+            <span className="font-normal text-zinc-500"> · </span>
+            {viewerRole === "vocalist" ? (
+              <>
+                with <span className="text-zinc-200">{displayCounterparty}</span>
+              </>
+            ) : (
+              <>
+                with <span className="text-zinc-200">{vocalistName}</span>
+              </>
+            )}
+          </p>
+        </div>
         <WorkspaceStatusBadge status={order.status} />
       </div>
 
@@ -92,9 +125,19 @@ export function OrderWorkspaceLayout({
             <h1 className="mt-1 text-lg font-semibold leading-tight text-white">{title}</h1>
           </div>
           <dl className="space-y-2 text-xs text-zinc-400">
+            {viewerRole && displaySelf && (
+              <div>
+                <dt className="text-zinc-500">
+                  {viewerRole === "vocalist" ? "Vocalist (you)" : "Producer (you)"}
+                </dt>
+                <dd className="font-medium text-zinc-100">{displaySelf}</dd>
+              </div>
+            )}
             <div>
-              <dt className="text-zinc-500">{counterpartyLabel}</dt>
-              <dd className="font-medium text-zinc-200">{counterpartyName}</dd>
+              <dt className="text-zinc-500">
+                {viewerRole === "vocalist" ? "Producer" : "Vocalist"}
+              </dt>
+              <dd className="font-medium text-zinc-200">{displayCounterparty}</dd>
             </div>
             <div>
               <dt className="text-zinc-500">Status</dt>
