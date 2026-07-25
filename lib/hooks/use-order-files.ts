@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { listOrderFiles, type OrderFile } from "@/lib/order-files";
+import { listOrderFiles, subscribeOrderFiles, type OrderFile } from "@/lib/order-files";
 import { usePollWhileVisible } from "@/lib/hooks/use-poll-while-visible";
 import { useRefetchOnVisible } from "@/lib/hooks/use-refetch-on-visible";
 
@@ -32,6 +32,8 @@ export function useOrderFiles(orderId: string | undefined) {
     setLoading(true);
     void refetch();
   }, [refetch]);
+
+  useEffect(() => subscribeOrderFiles(refetch), [refetch]);
 
   useRefetchOnVisible(refetch);
   usePollWhileVisible(refetch, 15_000);

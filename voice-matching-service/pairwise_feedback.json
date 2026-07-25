@@ -1,0 +1,394 @@
+{
+  "pairs": [
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-12T09:16:29.694683+00:00"
+    },
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-12T09:17:07.490740+00:00"
+    },
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-12T09:24:15.308589+00:00"
+    },
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-12T09:26:37.329509+00:00"
+    },
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male bright 02.mp3",
+      "created_at": "2026-07-12T09:26:45.882452+00:00"
+    },
+    {
+      "ai_reference": "Stay wm2n.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-12T09:30:16.750068+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T10:35:45.540056+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male rap E bright 01.mp3",
+      "farther": "EN male warm 01.mp3",
+      "created_at": "2026-07-20T10:35:49.208279+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-20T10:37:32.412642+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 02.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T10:37:57.491732+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T10:38:08.529874+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T10:38:38.481845+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-20T10:38:52.803856+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T10:39:29.821305+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T10:39:42.753394+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "created_at": "2026-07-20T10:39:53.020816+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T10:40:08.915113+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T10:40:19.281526+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T12:35:18.155261+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T12:35:26.359262+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-20T12:35:45.094116+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 02.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T12:35:48.484547+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T12:35:57.283735+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T12:36:05.753910+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-20T12:36:24.870846+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T12:36:31.404015+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T12:36:38.690578+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "created_at": "2026-07-20T12:36:44.035999+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T12:36:55.163166+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T12:37:06.970688+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T12:41:44.933319+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T12:41:52.569402+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-20T12:42:00.561266+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 02.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T12:42:06.604175+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T12:42:11.740156+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T12:42:16.554309+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-20T12:42:21.772373+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T12:42:25.987679+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T12:42:31.737853+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "created_at": "2026-07-20T12:42:36.618068+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male warm 01.mp3",
+      "created_at": "2026-07-20T13:08:07.091145+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-20T13:08:14.962145+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 02.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T13:08:19.185677+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T13:08:26.674665+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T13:08:33.261002+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-20T13:08:38.901869+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 02.mp3",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T13:08:44.469358+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T13:08:50.156133+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "created_at": "2026-07-20T13:08:54.387304+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T13:08:59.820983+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male bright 01.mp3",
+      "created_at": "2026-07-20T13:39:09.484654+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T13:39:19.130714+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "EN male warm 01.mp3",
+      "created_at": "2026-07-20T13:45:57.266306+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male warm 02.mp3",
+      "created_at": "2026-07-20T13:46:06.431719+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 02.mp3",
+      "farther": "EN male bright 02.mp3",
+      "created_at": "2026-07-20T13:46:11.698308+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "EN male bright 02.mp3",
+      "created_at": "2026-07-20T13:46:43.136160+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male bright 01.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T13:46:48.464956+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 3 boy.wav",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T13:46:52.562721+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "EN male bright 03.mp3",
+      "created_at": "2026-07-20T13:46:58.871665+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male bright 01.mp3",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T13:47:05.306639+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "BRZ male bright L 01.mp3",
+      "created_at": "2026-07-20T13:47:13.165285+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T13:47:22.660812+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "RU male warm 01.mp3",
+      "farther": "Real vocal 3 boy.wav",
+      "created_at": "2026-07-20T13:47:29.714098+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "EN male rap E bright 01.mp3",
+      "created_at": "2026-07-20T13:47:37.513238+00:00"
+    },
+    {
+      "ai_reference": "Onde o Ritmo R.mp3",
+      "closer": "EN male warm 01.mp3",
+      "farther": "RU male warm 01.mp3",
+      "created_at": "2026-07-21T12:36:08.614424+00:00"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { AnimatedButton } from "@/components/animated-button";
 import { AdminWorkspaceShell } from "@/components/admin-workspace-shell";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { OrderWorkspaceFiles } from "@/components/order-workspace-files";
+import { ProducerReferenceBlock } from "@/components/producer-reference-block";
 import {
   OrderWorkspaceLayout,
   WorkspaceChat,
@@ -120,13 +121,22 @@ export default function WorkspacePage() {
         viewerRole={isAdminView ? undefined : "producer"}
         selfName={user?.username}
         leftExtra={
-          <AnimatedButton
-            href={`/vocalists/${order.vocalistId}`}
-            variant="secondary"
-            className="mt-2 inline-flex w-full justify-center rounded-lg px-3 py-2 text-xs"
-          >
-            View profile
-          </AnimatedButton>
+          <>
+            {!isAdminView && (
+              <ProducerReferenceBlock
+                orderId={order.id}
+                trackTitle={order.reference || order.trackName}
+                disabled={isCompleted}
+              />
+            )}
+            <AnimatedButton
+              href={`/vocalists/${order.vocalistId}`}
+              variant="secondary"
+              className="mt-4 inline-flex w-full justify-center rounded-lg px-3 py-2 text-xs"
+            >
+              View profile
+            </AnimatedButton>
+          </>
         }
         center={
           <WorkspaceChat

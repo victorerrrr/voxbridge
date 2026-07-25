@@ -106,6 +106,9 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Path layout: {order_id}/{file_id}_{sanitized_name}
 
+GRANT EXECUTE ON FUNCTION public.user_can_access_order(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.user_can_upload_order_file(uuid, text) TO authenticated;
+
 DROP POLICY IF EXISTS "order_files_storage_select" ON storage.objects;
 CREATE POLICY "order_files_storage_select"
 ON storage.objects
@@ -113,7 +116,12 @@ FOR SELECT
 TO authenticated
 USING (
   bucket_id = 'order-files'
-  AND public.user_can_access_order((split_part(name, '/', 1))::uuid)
+  AND EXISTS (
+    SELECT 1
+    FROM public.order_files f
+    WHERE f.storage_path = name
+      AND public.user_can_access_order(f.order_id)
+  )
 );
 
 DROP POLICY IF EXISTS "order_files_storage_insert" ON storage.objects;

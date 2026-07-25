@@ -115,10 +115,10 @@ export function OrderWorkspaceLayout({
         <WorkspaceStatusBadge status={order.status} />
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto lg:flex-row lg:gap-0 lg:overflow-hidden">
         <aside
           style={{ width: leftWidth }}
-          className="flex shrink-0 flex-col gap-3 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/50 p-4"
+          className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/50 p-4 lg:w-auto"
         >
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Project</p>
@@ -151,12 +151,12 @@ export function OrderWorkspaceLayout({
           role="separator"
           aria-orientation="vertical"
           onPointerDown={leftDrag.onPointerDown}
-          className="group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-purple-500/25"
+          className="group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-purple-500/25 lg:block"
         >
           <span className="absolute inset-y-4 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-white/10 group-hover:bg-purple-400/60" />
         </div>
 
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950/60">
+        <section className="flex min-h-[18rem] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950/60 lg:min-h-0">
           {center}
         </section>
 
@@ -164,14 +164,14 @@ export function OrderWorkspaceLayout({
           role="separator"
           aria-orientation="vertical"
           onPointerDown={rightDrag.onPointerDown}
-          className="group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-cyan-500/25"
+          className="group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-cyan-500/25 lg:block"
         >
           <span className="absolute inset-y-4 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-white/10 group-hover:bg-cyan-400/60" />
         </div>
 
         <aside
           style={{ width: rightWidth }}
-          className="flex shrink-0 flex-col gap-3 overflow-y-auto"
+          className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto lg:w-auto"
         >
           {right}
         </aside>

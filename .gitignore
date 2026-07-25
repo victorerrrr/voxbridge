@@ -46,3 +46,9 @@ node_modules/
 .env
 __pycache__/
 *.pyc
+
+# Regenerable voice-feature caches (multi‑MB JSON with waveforms)
+voice-matching-service/demo_profiles/*.json
+
+# Ableton peak/analysis sidecars
+*.asd

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ReferencePlayer } from "@/components/reference-player";
 import {
   getOrderFileDownloadUrl,
   orderFileKindLabel,
@@ -12,22 +13,38 @@ type OrderFilesPanelProps = {
   files: OrderFile[];
   loading?: boolean;
   highlightKind?: OrderFileKind;
+  /** Only show the latest file per kind (less clutter). */
+  latestOnly?: boolean;
+  emptyMessage?: string;
 };
 
-export function OrderFilesPanel({ files, loading, highlightKind }: OrderFilesPanelProps) {
+export function OrderFilesPanel({
+  files,
+  loading,
+  highlightKind,
+  latestOnly,
+  emptyMessage,
+}: OrderFilesPanelProps) {
   if (loading) {
     return <p className="text-sm text-zinc-500">Loading files…</p>;
   }
 
   if (files.length === 0) {
-    return <p className="text-sm text-zinc-500">No files uploaded yet.</p>;
+    return (
+      <p className="text-sm text-zinc-500">
+        {emptyMessage ?? "No files uploaded yet."}
+      </p>
+    );
   }
 
   const grouped = (["reference", "preview", "revision", "stems"] as OrderFileKind[]).map(
-    (kind) => ({
-      kind,
-      items: files.filter((f) => f.kind === kind),
-    })
+    (kind) => {
+      const items = files.filter((f) => f.kind === kind);
+      return {
+        kind,
+        items: latestOnly && items.length > 0 ? [items[items.length - 1]] : items,
+      };
+    }
   );
 
   return (
@@ -55,21 +72,30 @@ export function OrderFilesPanel({ files, loading, highlightKind }: OrderFilesPan
 }
 
 function OrderFileRow({ file }: { file: OrderFile }) {
-  const [downloading, setDownloading] = useState(false);
+  const [loadingUrl, setLoadingUrl] = useState(false);
 
-  const onDownload = async () => {
-    setDownloading(true);
+  const onOpen = async () => {
+    setLoadingUrl(true);
     try {
       const url = file.playbackUrl ?? (await getOrderFileDownloadUrl(file.storagePath));
       if (!url) return;
       window.open(url, "_blank", "noopener,noreferrer");
     } finally {
-      setDownloading(false);
+      setLoadingUrl(false);
     }
   };
 
   const sizeLabel =
     file.sizeBytes != null ? `${(file.sizeBytes / (1024 * 1024)).toFixed(1)} MB` : null;
+
+  if (file.kind !== "stems") {
+    return (
+      <li>
+        <ReferencePlayer file={file} />
+        {sizeLabel ? <p className="mt-1 text-xs text-zinc-500">{sizeLabel}</p> : null}
+      </li>
+    );
+  }
 
   return (
     <li className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2">
@@ -79,11 +105,11 @@ function OrderFileRow({ file }: { file: OrderFile }) {
       </div>
       <button
         type="button"
-        onClick={() => void onDownload()}
-        disabled={downloading}
+        onClick={() => void onOpen()}
+        disabled={loadingUrl}
         className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-300 transition hover:border-purple-400/40 hover:text-white disabled:opacity-50"
       >
-        {downloading ? "…" : "Open"}
+        {loadingUrl ? "…" : "Open"}
       </button>
     </li>
   );

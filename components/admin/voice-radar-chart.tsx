@@ -4,7 +4,7 @@ const AXES = [
   { label: "Тембр", key: "timbre", tip: "Схожесть тембра" },
   { label: "Диапазон", key: "pitch", tip: "Высота и диапазон" },
   { label: "Голос", key: "vocal_character", tip: "Характер голоса" },
-  { label: "Чёткость", key: "quality", tip: "Качество звучания" },
+  { label: "Запись", key: "quality", tip: "Качество записи (шум/клип), не «плохой голос»" },
   { label: "Стиль", key: "speaker", tip: "Жанровое соответствие" },
 ];
 

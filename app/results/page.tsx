@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InternalPageShell } from "@/components/internal-page-shell";
 import { AnimatedButton } from "@/components/animated-button";
@@ -17,7 +17,7 @@ const CONFIDENCE_COLORS: Record<string, string> = {
 };
 
 const GENRE_WEIGHT_PERCENTS: Record<string, { speaker: number; timbre: number; pitch: number; quality: number; vocalCharacter: number }> = {
-  singing: { speaker: 15.0, timbre: 42.0, pitch: 30.0, quality: 5.0, vocalCharacter: 8.0 },
+  singing: { speaker: 30.0, timbre: 24.0, pitch: 35.0, quality: 2.0, vocalCharacter: 9.0 },
   rap: { speaker: 31.2, timbre: 36.5, pitch: 18.8, quality: 5.2, vocalCharacter: 8.3 },
   "hip-hop": { speaker: 31.2, timbre: 36.5, pitch: 18.8, quality: 5.2, vocalCharacter: 8.3 },
   rnb: { speaker: 15.3, timbre: 45.9, pitch: 25.5, quality: 5.1, vocalCharacter: 8.2 },
@@ -50,48 +50,154 @@ function ConfidenceBadge({ row }: { row: AiVoiceMatchResult }) {
 
 let _globalAudio: HTMLAudioElement | null = null;
 let _globalStop: (() => void) | null = null;
+let _globalUrl: string | null = null;
 
 function PlayerBar({ url, startAt = 0, label, color = "bg-purple-500" }: { url: string; startAt?: number; label: string; color?: string }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    if (!url) return;
+    const meta = new Audio();
+    meta.preload = "metadata";
+    meta.src = url;
+    const onMeta = () => {
+      if (Number.isFinite(meta.duration) && meta.duration > 0) {
+        setDuration(meta.duration);
+      }
+    };
+    meta.addEventListener("loadedmetadata", onMeta);
+    return () => {
+      meta.removeEventListener("loadedmetadata", onMeta);
+      meta.src = "";
+    };
+  }, [url]);
+
   if (!url) return null;
-  function toggle() {
-    if (playing) {
-      _globalAudio?.pause();
+
+  function bindAudio(a: HTMLAudioElement) {
+    _globalAudio = a;
+    _globalUrl = url;
+    _globalStop = () => {
+      a.pause();
       setPlaying(false);
-      _globalStop = null;
+      if (_globalAudio === a) {
+        _globalAudio = null;
+        _globalUrl = null;
+        _globalStop = null;
+      }
+    };
+    a.addEventListener("loadedmetadata", () => {
+      if (Number.isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
+    });
+    a.addEventListener("timeupdate", () => setCurrentTime(a.currentTime));
+    a.addEventListener("ended", () => {
+      setPlaying(false);
+      setCurrentTime(0);
+      if (_globalAudio === a) {
+        _globalAudio = null;
+        _globalUrl = null;
+        _globalStop = null;
+      }
+    });
+  }
+
+  function playFrom(seconds: number) {
+    const target = Math.max(0, seconds);
+    if (_globalUrl === url && _globalAudio) {
+      _globalAudio.currentTime = target;
+      void _globalAudio.play();
+      setPlaying(true);
+      setCurrentTime(target);
       return;
     }
     if (_globalStop) _globalStop();
     const a = new Audio(url);
-    _globalAudio = a;
-    _globalStop = () => { a.pause(); setPlaying(false); };
-    a.addEventListener("loadedmetadata", () => { setDuration(a.duration); });
-    a.addEventListener("timeupdate", () => { setCurrentTime(a.currentTime); });
-    a.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); _globalStop = null; });
-    a.currentTime = startAt;
-    a.play();
-    setPlaying(true);
+    bindAudio(a);
+    const start = () => {
+      a.currentTime = Math.min(target, Number.isFinite(a.duration) ? a.duration : target);
+      void a.play();
+      setPlaying(true);
+      setCurrentTime(a.currentTime);
+    };
+    if (a.readyState >= 1) {
+      start();
+    } else {
+      a.addEventListener("loadedmetadata", start, { once: true });
+      a.load();
+    }
   }
+
+  function toggle() {
+    if (playing && _globalUrl === url && _globalAudio) {
+      _globalAudio.pause();
+      setPlaying(false);
+      return;
+    }
+    playFrom(playing ? currentTime : startAt);
+  }
+
   function seek(e: React.MouseEvent<HTMLDivElement>) {
-    if (!_globalAudio || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    _globalAudio.currentTime = pct * duration;
-    setCurrentTime(pct * duration);
+    if (rect.width <= 0) return;
+    const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const dur =
+      duration > 0
+        ? duration
+        : _globalUrl === url && _globalAudio && Number.isFinite(_globalAudio.duration)
+          ? _globalAudio.duration
+          : 0;
+    if (dur > 0) {
+      playFrom(fraction * dur);
+      return;
+    }
+    // Duration not ready yet — start audio, then jump to fraction.
+    if (_globalStop && _globalUrl !== url) _globalStop();
+    const a = _globalUrl === url && _globalAudio ? _globalAudio : new Audio(url);
+    if (_globalUrl !== url || !_globalAudio) {
+      if (_globalStop) _globalStop();
+      bindAudio(a);
+    }
+    const jump = () => {
+      const d = a.duration;
+      if (!Number.isFinite(d) || d <= 0) return;
+      setDuration(d);
+      playFrom(fraction * d);
+    };
+    if (a.readyState >= 1) jump();
+    else a.addEventListener("loadedmetadata", jump, { once: true });
+    void a.play().catch(() => undefined);
   }
+
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const fmt = (s: number) => String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+  const fmt = (s: number) =>
+    String(Math.floor(s / 60)) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   return (
     <div className="flex flex-col gap-1 w-full">
       <div className="flex items-center gap-2">
-        <button onClick={toggle} className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium bg-zinc-800 border border-white/10 hover:bg-zinc-700 text-white transition-colors">
+        <button
+          type="button"
+          onClick={toggle}
+          className="shrink-0 inline-flex items-center gap-1 rounded-md border border-white/10 bg-zinc-800 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700"
+        >
           {playing ? "⏸" : "▶"} {label}
         </button>
-        <span className="text-xs text-white/40 tabular-nums shrink-0">{fmt(currentTime)}{duration > 0 ? " / " + fmt(duration) : ""}</span>
+        <span className="shrink-0 tabular-nums text-xs text-white/40">
+          {fmt(currentTime)}
+          {duration > 0 ? " / " + fmt(duration) : ""}
+        </span>
       </div>
-      <div className="relative h-2 w-full rounded-full bg-white/10 cursor-pointer overflow-hidden" onClick={seek}>
+      <div
+        role="slider"
+        aria-label="Seek"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration) || 100}
+        aria-valuenow={Math.round(currentTime)}
+        tabIndex={0}
+        className="relative h-2.5 w-full cursor-pointer overflow-hidden rounded-full bg-white/10"
+        onClick={seek}
+      >
         <div className={"h-full rounded-full transition-none " + color} style={{ width: pct + "%" }} />
       </div>
     </div>
@@ -110,7 +216,329 @@ function BestMatchButton({ row }: { row: AiVoiceMatchResult }) {
   return <PlayerBar url={row.demoAudioUrl as string} startAt={sec} label={label} color="bg-zinc-400" />;
 }
 
-function ResultCard({ row, rank, genreUsed }: { row: AiVoiceMatchResult; rank: number; genreUsed?: string | null }) {
+function MatchFeedbackButtons({ filename }: { filename?: string }) {
+  const [status, setStatus] = useState<"idle" | "good" | "bad" | "error" | "reset">("idle");
+  const [good, setGood] = useState(0);
+  const [bad, setBad] = useState(0);
+
+  const refreshCounts = async () => {
+    if (!filename) return;
+    try {
+      const res = await fetch(
+        `http://localhost:8000/feedback/demo/${encodeURIComponent(filename)}`
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { good?: number; bad?: number };
+      setGood(Number(data.good ?? 0));
+      setBad(Number(data.bad ?? 0));
+    } catch {
+      /* API optional while browsing */
+    }
+  };
+
+  useEffect(() => {
+    void refreshCounts();
+  }, [filename]);
+
+  if (!filename) return null;
+
+  const send = async (rating: "good" | "bad") => {
+    try {
+      const res = await fetch("http://localhost:8000/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo_filename: filename, rating }),
+      });
+      if (!res.ok) throw new Error("feedback failed");
+      const data = (await res.json()) as { entry?: { good?: number; bad?: number } };
+      if (data.entry) {
+        setGood(Number(data.entry.good ?? 0));
+        setBad(Number(data.entry.bad ?? 0));
+      } else {
+        await refreshCounts();
+      }
+      setStatus(rating);
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const reset = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/feedback/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo_filename: filename }),
+      });
+      if (!res.ok) throw new Error("reset failed");
+      setGood(0);
+      setBad(0);
+      setStatus("reset");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-white/10 pt-2">
+      <p className="mb-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+        Похоже на AI-вокал? (да / нет)
+      </p>
+      <p className="mb-1.5 text-[10px] text-zinc-500">
+        Накоплено: <span className="text-emerald-300/90">Да {good}</span>
+        {" · "}
+        <span className="text-rose-300/90">Нет {bad}</span>
+        {good - bad !== 0 ? (
+          <span className="text-zinc-600">
+            {" "}
+            (итог {good - bad > 0 ? "+" : ""}
+            {good - bad})
+          </span>
+        ) : null}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void send("good")}
+          className={`rounded-md border px-2.5 py-1 text-xs transition ${
+            status === "good"
+              ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-200"
+              : "border-white/10 text-zinc-400 hover:border-emerald-400/40"
+          }`}
+        >
+          Да
+        </button>
+        <button
+          type="button"
+          onClick={() => void send("bad")}
+          className={`rounded-md border px-2.5 py-1 text-xs transition ${
+            status === "bad"
+              ? "border-rose-400/50 bg-rose-500/20 text-rose-200"
+              : "border-white/10 text-zinc-400 hover:border-rose-400/40"
+          }`}
+        >
+          Нет
+        </button>
+        {(good > 0 || bad > 0) && (
+          <button
+            type="button"
+            onClick={() => void reset()}
+            className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-500 hover:border-amber-400/40 hover:text-amber-200/90"
+            title="Обнулить Да/Нет по этому демо — можно передумать"
+          >
+            Сбросить
+          </button>
+        )}
+      </div>
+      {status === "error" ? (
+        <p className="mt-1 text-[10px] text-rose-300">Не сохранилось — Python API запущен?</p>
+      ) : status === "reset" ? (
+        <p className="mt-1 text-[10px] text-amber-200/90">
+          Счётчики обнулены. Поставьте новую оценку и сделайте Match заново.
+        </p>
+      ) : status === "good" || status === "bad" ? (
+        <p className="mt-1 text-[10px] text-emerald-200/90">
+          Сохранено. Учтётся при <strong>следующем</strong> матче.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+type DuelCandidate = {
+  filename: string;
+  label: string;
+  demoAudioUrl?: string;
+  matchPercent?: number;
+};
+
+type DuelPair = { a: DuelCandidate; b: DuelCandidate };
+
+/** Adjacent ranks + a few top-vs-mid pairs — enough signal, not every-vs-every. */
+function buildDuelQueue(candidates: DuelCandidate[]): DuelPair[] {
+  if (candidates.length < 2) return [];
+  const pairs: DuelPair[] = [];
+  const seen = new Set<string>();
+  const push = (a: DuelCandidate, b: DuelCandidate) => {
+    const key = [a.filename, b.filename].sort().join("||");
+    if (seen.has(key) || a.filename === b.filename) return;
+    seen.add(key);
+    pairs.push({ a, b });
+  };
+  for (let i = 0; i < candidates.length - 1; i++) {
+    push(candidates[i], candidates[i + 1]);
+  }
+  if (candidates.length >= 5) {
+    push(candidates[0], candidates[Math.floor(candidates.length / 2)]);
+    push(candidates[1], candidates[candidates.length - 1]);
+  }
+  return pairs;
+}
+
+function CalibrationDuel({
+  candidates,
+  aiReferenceFilename,
+  aiReferenceUrl,
+}: {
+  candidates: DuelCandidate[];
+  aiReferenceFilename: string;
+  aiReferenceUrl?: string;
+}) {
+  const queue = buildDuelQueue(candidates);
+  const [index, setIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<"idle" | "ok" | "error" | "skip">("idle");
+  const [savedCount, setSavedCount] = useState(0);
+  const [done, setDone] = useState(false);
+
+  const pair = !done && index < queue.length ? queue[index] : null;
+
+  const advance = () => {
+    setStatus("idle");
+    if (index + 1 >= queue.length) {
+      setDone(true);
+      return;
+    }
+    setIndex((i) => i + 1);
+  };
+
+  const submitCloser = async (closer: string, farther: string) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus("idle");
+    try {
+      const res = await fetch("http://localhost:8000/feedback/pairwise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ai_reference: aiReferenceFilename,
+          closer,
+          farther,
+        }),
+      });
+      if (!res.ok) throw new Error("pairwise failed");
+      setSavedCount((n) => n + 1);
+      setStatus("ok");
+      setTimeout(advance, 350);
+    } catch {
+      setStatus("error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (candidates.length < 2) return null;
+
+  return (
+    <section className="mb-6 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-200/90">
+            Дуэль 1×1 (калибровка)
+          </p>
+          <p className="mt-1 max-w-xl text-sm text-zinc-300">
+            Слушаете только AI и <strong>двух</strong> вокалистов. Выберите, кто ближе к AI по тембру.
+            Сомневаетесь — «Не уверен». Это не экзамен: пропуск лучше ошибочного клика.
+          </p>
+        </div>
+        <p className="text-xs tabular-nums text-zinc-500">
+          {done ? "готово" : `${index + 1} / ${queue.length}`}
+          {savedCount > 0 ? ` · сохранено ${savedCount}` : ""}
+        </p>
+      </div>
+
+      {aiReferenceUrl ? (
+        <div className="mt-4 rounded-xl border border-white/10 bg-zinc-950/50 p-3">
+          <p className="mb-2 text-[10px] uppercase tracking-wide text-zinc-500">AI-референс</p>
+          <PlayerBar url={aiReferenceUrl} label="AI Vocal" color="bg-purple-500" />
+          <p className="mt-1 text-[11px] text-zinc-500">{aiReferenceFilename || "—"}</p>
+        </div>
+      ) : null}
+
+      {done ? (
+        <p className="mt-4 text-sm text-emerald-200/90">
+          Очередь дуэлей закончена ({savedCount} пар). Можно листать карточки ниже и ставить Да/Нет
+          только на очевидные случаи — или загрузить другой AI-вокал.
+        </p>
+      ) : pair ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {([pair.a, pair.b] as const).map((side, sideIdx) => (
+              <div
+                key={side.filename}
+                className="rounded-xl border border-white/10 bg-zinc-950/60 p-4"
+              >
+                <p className="text-[10px] uppercase tracking-wide text-zinc-500">
+                  {sideIdx === 0 ? "Вариант A" : "Вариант B"}
+                </p>
+                <h3 className="mt-1 text-sm font-semibold text-white">{side.label}</h3>
+                {side.matchPercent != null ? (
+                  <p className="text-xs text-zinc-500">Сейчас в списке: {side.matchPercent}%</p>
+                ) : null}
+                {side.demoAudioUrl ? (
+                  <div className="mt-3">
+                    <PlayerBar url={side.demoAudioUrl} label="Play" color="bg-zinc-400" />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void submitCloser(
+                      side.filename,
+                      sideIdx === 0 ? pair.b.filename : pair.a.filename
+                    )
+                  }
+                  className="mt-3 w-full rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/25 disabled:opacity-40"
+                >
+                  Этот ближе к AI
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setStatus("skip");
+                advance();
+              }}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-zinc-300 hover:border-white/30"
+            >
+              Не уверен — пропустить
+            </button>
+            <button
+              type="button"
+              disabled={busy || index + 1 >= queue.length}
+              onClick={advance}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-500 hover:border-white/25"
+            >
+              Следующая пара →
+            </button>
+          </div>
+          {status === "ok" ? (
+            <p className="mt-2 text-xs text-emerald-200/90">Сохранено.</p>
+          ) : status === "error" ? (
+            <p className="mt-2 text-xs text-rose-300">Не сохранилось — Python API на :8000 запущен?</p>
+          ) : status === "skip" ? (
+            <p className="mt-2 text-xs text-zinc-500">Пропущено — ок.</p>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function ResultCard({
+  row,
+  rank,
+  genreUsed,
+}: {
+  row: AiVoiceMatchResult;
+  rank: number;
+  genreUsed?: string | null;
+}) {
   const isTop = rank === 0;
   return (
     <article className={`rounded-2xl border p-5 shadow-sm transition ${isTop ? "border-purple-500/40 bg-zinc-900/80" : "border-white/10 bg-zinc-950/60"}`}>
@@ -154,13 +582,13 @@ function ResultCard({ row, rank, genreUsed }: { row: AiVoiceMatchResult; rank: n
                 { label: "Тембр", val: row.breakdown.timbreScore, weightKey: "timbre" as const },
                 { label: "Питч", val: row.breakdown.pitchScore, weightKey: "pitch" as const },
                 { label: "Стиль", val: (row as any).vocalCharacterScore, weightKey: "vocalCharacter" as const },
-                { label: "Чёткость", val: row.breakdown.qualityScore, weightKey: "quality" as const },
+                { label: "Запись", val: row.breakdown.qualityScore, weightKey: "quality" as const },
                 { label: "Голос", val: row.breakdown.speakerScore, weightKey: "speaker" as const },
               ].map(({ label, val, weightKey }) => {
                 const weights = genreUsed ? GENRE_WEIGHT_PERCENTS[genreUsed] : undefined;
                 const weightPct = weights ? weights[weightKey] : undefined;
                 return (
-                <div key={label} className="flex items-center gap-1.5">
+                <div key={label} className="flex items-center gap-1.5" title={label === "Запись" ? "Качество записи (шум/клип), не «плохой голос»" : undefined}>
                   <span className="text-xs text-white/50 w-16 shrink-0">
                     {label}
                     {weightPct !== undefined && (
@@ -214,6 +642,7 @@ function ResultCard({ row, rank, genreUsed }: { row: AiVoiceMatchResult; rank: n
         >
           View Profile
         </AnimatedButton>
+        <MatchFeedbackButtons filename={row.filename} />
       </div>
     </article>
   );
@@ -225,6 +654,8 @@ export default function ResultsPage() {
   const [results, setResults] = useState<AiVoiceMatchResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [genreUsed, setGenreUsed] = useState<string | null>(null);
+  const [aiReferenceFilename, setAiReferenceFilename] = useState("");
+  const [aiReferenceUrl, setAiReferenceUrl] = useState("");
 
   useEffect(() => {
     if (uploadContext === undefined) return;
@@ -242,10 +673,20 @@ export default function ResultsPage() {
       const rawRows = Array.isArray(data) ? data : data.results ?? [];
     setGenreUsed(typeof data?.genre_used === "string" ? data.genre_used : null);
     const aiRefFilename: string = data?.ai_reference?.ai_reference_filename ?? "";
+      setAiReferenceFilename(aiRefFilename);
+      setAiReferenceUrl(
+        aiRefFilename
+          ? `http://localhost:8000/ai-audio/${encodeURIComponent(aiRefFilename)}`
+          : ""
+      );
       const rows: AiVoiceMatchResult[] = rawRows.map((r: Record<string, unknown>, i: number) => ({
         ...r,
         id: r.id as string ?? r.filename as string ?? String(i),
-        vocalistName: r.display_name as string ?? r.vocalistName as string ?? r.filename as string ?? "Vocalist " + (i + 1),
+        vocalistName:
+          (r.display_name as string) ||
+          (r.vocalistName as string) ||
+          (r.filename as string) ||
+          "Vocalist " + (i + 1),
         matchPercent: r.matchPercent as number ?? r.similarity as number ?? 0,
         finalRankingScore: r.finalRankingScore as number ?? r.final_ranking_score as number ?? 0,
         displayVocalType: r.displayVocalType as string ?? r.final_vocal_type as string ?? r.detected_vocal_type as string ?? "",
@@ -314,6 +755,19 @@ export default function ResultsPage() {
         </div>
 
         {uploadContext && <UploadContextBanner context={uploadContext} />}
+
+        {results && results.length >= 2 && (
+          <CalibrationDuel
+            aiReferenceFilename={aiReferenceFilename}
+            aiReferenceUrl={aiReferenceUrl}
+            candidates={results.map((row, i) => ({
+              filename: (row.filename as string) || String(i),
+              label: `${i + 1}. ${row.vocalistName || row.filename || "Vocalist"}`,
+              demoAudioUrl: row.demoAudioUrl as string | undefined,
+              matchPercent: row.matchPercent,
+            }))}
+          />
+        )}
 
         {error && (
           <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">

@@ -35,6 +35,91 @@ def _compute_tag_bonus(demo_tags: dict, query_tags: dict) -> float:
     return round(bonus, 3)
 
 
+# Rap demos must not sit near the top of a singing / melodic match.
+STYLE_MISMATCH_RAP_UNDER_SINGING = 34.0
+STYLE_MISMATCH_RAP_UNDER_ANY = 20.0
+
+
+def _demo_delivery_style(filename: str) -> str | None:
+    """Infer delivery style from demo filename (e.g. 'EN male rap E bright 01')."""
+    if not filename:
+        return None
+    tokens = (
+        pathlib.Path(filename)
+        .stem.lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(".", " ")
+        .split()
+    )
+    if "rap" in tokens:
+        return "rap"
+    return None
+
+
+def _query_delivery_style(query_tags: dict | None) -> str | None:
+    genre = str((query_tags or {}).get("genre", "") or "").strip().lower()
+    if genre in ("rap", "hip-hop"):
+        return "rap"
+    if genre == "singing":
+        return "singing"
+    return None
+
+
+def _style_mismatch_rank_penalty(filename: str, query_tags: dict | None) -> float:
+    """Heavy demotion: rap demo under singing (or Any) query cannot rank as #2."""
+    demo_style = _demo_delivery_style(filename)
+    if demo_style != "rap":
+        return 0.0
+    query_style = _query_delivery_style(query_tags)
+    if query_style == "rap":
+        return 0.0
+    if query_style == "singing":
+        return STYLE_MISMATCH_RAP_UNDER_SINGING
+    # Voice style = Any: still keep rap out of the top of melodic AI matches.
+    return STYLE_MISMATCH_RAP_UNDER_ANY
+
+
+def _apply_hard_rap_partition(results: list[dict], query_tags: dict | None) -> None:
+    """Last-resort ordering: unless query is rap/hip-hop, all rap demos go after non-rap.
+
+    Soft score penalties are not enough when stretch + rank-gap inflate similarity %.
+    """
+    if not results:
+        return
+    if _query_delivery_style(query_tags) == "rap":
+        return
+    non_rap: list[dict] = []
+    rap_rows: list[dict] = []
+    for row in results:
+        filename = str(row.get("filename", "") or row.get("original_filename", "") or "")
+        if _demo_delivery_style(filename) == "rap":
+            # Cap displayed % so rap does not look like a strong #2 match.
+            row["similarity"] = _round_score(min(float(row.get("similarity", 0) or 0), 38.0))
+            if "final_ranking_score" in row:
+                row["final_ranking_score"] = _round_score(
+                    min(float(row.get("final_ranking_score", 0) or 0), 15.0)
+                )
+            reasons = row.get("reasons")
+            if isinstance(reasons, list) and "demoted: rap vs singing query" not in reasons:
+                reasons.append("demoted: rap vs singing query")
+            row["style_mismatch_penalty"] = max(
+                float(row.get("style_mismatch_penalty", 0) or 0),
+                STYLE_MISMATCH_RAP_UNDER_SINGING,
+            )
+            rap_rows.append(row)
+        else:
+            non_rap.append(row)
+    if not rap_rows or not non_rap:
+        return
+    results[:] = non_rap + rap_rows
+    logger.info(
+        "Hard rap partition: %d singing/other first, %d rap last",
+        len(non_rap),
+        len(rap_rows),
+    )
+
+
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
     os.environ.pop(key, None)
 
@@ -139,6 +224,7 @@ def _patch_speechbrain_lazy_integrations() -> None:
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 import shutil
 import tempfile
 import time
@@ -178,13 +264,14 @@ MAX_CHUNKS = 5
 # Mono samples in [-1, 1]; segments below this RMS are treated as silent and skipped.
 CHUNK_MIN_RMS = 0.01
 
-# v5 composite weights (v4 was 34/28/33/5; v3 was 35/32/28/5).
+# v5 composite weights — pitch + speaker lead; recording quality kept tiny
+# (poor recording ≠ poor voice — see docs/MATCHING_ENGINE_PHILOSOPHY.md).
 V4_WEIGHTS: dict[str, float] = {
-    "speaker": 0.15,
-    "timbre": 0.42,
-    "pitch": 0.30,
-    "quality": 0.05,
-    "vocal_character": 0.08,
+    "speaker": 0.30,
+    "timbre": 0.24,
+    "pitch": 0.35,
+    "quality": 0.02,
+    "vocal_character": 0.09,
 }
 KNOWN_GENRES = {"opera", "classical", "rnb", "soul", "rap", "hip-hop", "singing"}
 
@@ -909,6 +996,82 @@ def _parse_demo_display_names_form(raw: str | None, demo_count: int) -> list[str
     return names
 
 
+_DEMO_LANG_CODES: dict[str, str] = {
+    "ru": "Russian",
+    "en": "English",
+    "esp": "Spanish",
+    "kor": "Korean",
+    "brz": "Portuguese",
+    "hi": "Hindi",
+    "af": "Afrikaans",
+}
+
+
+def _filename_gender_tokens(base_lower: str) -> list[str]:
+    return base_lower.replace(".", " ").replace("_", " ").replace("-", " ").split()
+
+
+def _gender_from_filename_tokens(base_lower: str) -> str | None:
+    """Infer male|female from structured demo names (RU female warm 01, EN male …)."""
+    tokens = _filename_gender_tokens(base_lower)
+    if "female" in tokens or "girl" in tokens:
+        return "female"
+    if "male" in tokens or "boy" in tokens:
+        return "male"
+    return None
+
+
+def _parse_structured_demo_filename(filename: str) -> dict[str, str | list[str]]:
+    """Human labels from demos/ filenames when demo_profiles JSON is missing."""
+    stem = Path(filename).stem
+    base_lower = stem.lower()
+    tokens = _filename_gender_tokens(base_lower)
+    language = ""
+    languages: list[str] = []
+    if tokens:
+        lang = _DEMO_LANG_CODES.get(tokens[0], "")
+        if lang:
+            language = lang
+            languages = [lang]
+    return {
+        "display_name": stem,
+        "language": language,
+        "languages": languages,
+    }
+
+
+def _load_demo_display_metadata(filename: str) -> dict[str, str | list[str]]:
+    """display_name + language from demo_profiles JSON, else from filename."""
+    meta: dict[str, str | list[str]] = {
+        "display_name": "",
+        "language": "",
+        "languages": [],
+    }
+    profile_path = _demo_profile_path(filename)
+    if profile_path.exists():
+        try:
+            data = json.loads(profile_path.read_text())
+            if data.get("display_name"):
+                meta["display_name"] = str(data["display_name"])
+            langs = data.get("languages")
+            if isinstance(langs, list) and langs:
+                meta["languages"] = [str(item) for item in langs]
+                meta["language"] = str(langs[0])
+            elif data.get("language"):
+                meta["language"] = str(data["language"])
+                meta["languages"] = [meta["language"]]
+        except Exception as exc:
+            logger.warning("demo profile metadata read failed for %s: %s", filename, exc)
+    parsed = _parse_structured_demo_filename(filename)
+    if not meta["display_name"]:
+        meta["display_name"] = str(parsed.get("display_name", ""))
+    if not meta["language"]:
+        meta["language"] = str(parsed.get("language", ""))
+    if not meta["languages"]:
+        meta["languages"] = list(parsed.get("languages", []))
+    return meta
+
+
 def _manual_demo_gender_lookup(filename: str) -> str | None:
     """Return male|female from MANUAL_DEMO_GENDER (exact basename) or SUBSTRINGS."""
     base_lower = Path(filename).name.lower()
@@ -923,7 +1086,7 @@ def _manual_demo_gender_lookup(filename: str) -> str | None:
             normalized = str(gender).lower()
             if normalized in ("male", "female"):
                 return normalized
-    return None
+    return _gender_from_filename_tokens(base_lower)
 
 
 def _resolve_manual_demo_gender(row: dict) -> str | None:
@@ -1442,30 +1605,46 @@ def _compute_final_ranking_score(
         male_pool=male_pool,
     )
     tier_penalty = _gender_priority_tier_penalty(tier)
+    pitch_sc = float(row.get("pitch_score", 0) or 0)
+    pitch_rank_adjust = max(0.0, pitch_sc - 72.0) * 0.22 - max(0.0, 72.0 - pitch_sc) * 0.18
+    _demo_fn = str(row.get("filename", "") or row.get("demo_filename", "") or "")
+    query_tags = row.get("_query_tags") or {}
+    style_penalty = _style_mismatch_rank_penalty(_demo_fn, query_tags)
+    row["style_mismatch_penalty"] = round(style_penalty, 1)
+    if style_penalty > 0:
+        reasons = row.get("reasons")
+        if isinstance(reasons, list) and "demoted: rap vs singing query" not in reasons:
+            reasons.append("demoted: rap vs singing query")
     final = (
         float(row["similarity"])
         - distance * VOCAL_TYPE_RANK_DISTANCE_WEIGHT
         - mismatch_penalty
         - tier_penalty
-        - (max(0.0, 35.0 - float(row.get("pitch_score", 35))) * 1.2)
-    + _compute_tag_bonus(
-        _get_demo_tags(_demo_lookup_filename(row)),
-        row.get("_query_tags") or {}
-    )
+        - style_penalty
+        + pitch_rank_adjust
+        + _compute_tag_bonus(
+            _get_demo_tags(_demo_lookup_filename(row)),
+            query_tags,
+        )
     )
     _fb_boost = _feedback_boost(str(row.get(chr(100)+chr(101)+chr(109)+chr(111)+chr(95)+chr(102)+chr(105)+chr(108)+chr(101)+chr(110)+chr(97)+chr(109)+chr(101), chr(0))))
     row["feedback_boost"] = round(_fb_boost, 1)
-    return tier, _round_score(final + _fb_boost)
+    _ai_ref = str(ai_pitch_features.get("ai_reference_filename", "") or "")
+    _pw_boost = _pairwise_boost(_demo_fn, _ai_ref)
+    row["pairwise_boost"] = round(_pw_boost, 1)
+    return tier, _round_score(final + _fb_boost + _pw_boost)
 
 
 def _sort_rows_by_final_ranking_score(rows: list[dict]) -> list[dict]:
-    """Stable descending sort by final_ranking_score (tie: tier asc, timbre desc)."""
+    """Stable descending sort by final_ranking_score (tie: tier asc, pitch desc)."""
     indexed = list(enumerate(rows))
     indexed.sort(
         key=lambda item: (
             -float(item[1]["final_ranking_score"]),
             int(item[1]["_gender_priority_tier"]),
-            -float(item[1]["timbre_score"]),
+            -float(item[1].get("pitch_score", 0) or 0),
+            -float(item[1].get("vocal_character_score", 0) or 0),
+            -float(item[1].get("speaker_score", 0) or 0),
             item[0],
         )
     )
@@ -1521,7 +1700,8 @@ def _sort_rows_by_vocal_match_then_final_ranking_score(rows: list[dict]) -> list
             0 if item[1].get("vocal_type_match") is True else 1,
             -float(item[1].get("final_ranking_score", item[1].get("similarity", 0))),
             int(item[1].get("_gender_priority_tier", 1)),
-            -float(item[1].get("timbre_score", 0)),
+            -float(item[1].get("pitch_score", 0) or 0),
+            -float(item[1].get("vocal_character_score", 0) or 0),
             item[0],
         )
     )
@@ -1938,13 +2118,13 @@ def _finalize_voice_match_results(
                 r["speaker_score"] = round(NORMALIZE_TARGET_BOTTOM + (raw_spk - spk_min) / spk_span * (100.0 - NORMALIZE_TARGET_BOTTOM), 1)
     _normalize_similarities_across_demos(results)
     # Language penalty: if ai_language is set, penalize demos whose language differs
-    if ai_language:
-        import json as _json
-        profiles_dir = _DEMO_PROFILES_DIR
+    if ai_language and ai_language.lower() not in ("any", ""):
         for r in results:
             _fname = r.get("filename", "") or r.get("original_filename", "")
-            _pfile = _DEMO_PROFILES_DIR / _fname.replace(".wav", ".json") if _fname else None
-            _langs = json.loads(_pfile.read_text()).get("languages", []) if _pfile and _pfile.exists() else []
+            _meta = _load_demo_display_metadata(_fname) if _fname else {}
+            _langs = list(_meta.get("languages", []))
+            if not _langs and _meta.get("language"):
+                _langs = [str(_meta["language"])]
             if _langs and ai_language not in _langs:
                 r["similarity"] = max(0.0, round(r.get("similarity", 0) * 0.4, 1))
     for row in results:
@@ -2027,6 +2207,19 @@ def _finalize_voice_match_results(
             demo_pitch if isinstance(demo_pitch, dict) else {},
             breakdown,
         )
+        _fname = row.get("filename", "") or row.get("original_filename", "")
+        if _fname:
+            _meta = _load_demo_display_metadata(_fname)
+            if not row.get("display_name"):
+                row["display_name"] = _meta.get("display_name", "")
+            if not row.get("demo_language"):
+                row["demo_language"] = _meta.get("language", "")
+    if gender_override in ("male", "female"):
+        filtered = [
+            row for row in results if _demo_final_vocal_type(row) == gender_override
+        ]
+        if filtered:
+            results[:] = filtered
     if results:
         first_ai_timbre = results[0].pop("_ai_timbre", None)
         first_ai_waveform = results[0].pop("_ai_waveform", None)
@@ -2061,6 +2254,8 @@ def _finalize_voice_match_results(
     else:
         logger.info("voice-match complete: %d result(s)", len(results))
     _force_demote_real_voice_1(results)
+    _apply_hard_rap_partition(results, query_tags)
+    _apply_negative_feedback_demotion(results)
     return _build_voice_match_response(
         results,
         partial=partial,
@@ -2435,8 +2630,18 @@ def _extract_chunk_embeddings(
     logger.info("embedding start for %s", label)
     waveform = _waveform_for_embedding(path, step, budget, run_demucs)
     chunks = split_into_chunks(waveform, ECAPA_SAMPLE_RATE)
+    if not chunks and run_demucs and USE_DEMUCS:
+        logger.warning(
+            "No audible vocal chunks after Demucs for %s; retrying on full mix",
+            label,
+        )
+        waveform = _waveform_for_embedding(path, step, budget, run_demucs=False)
+        chunks = split_into_chunks(waveform, ECAPA_SAMPLE_RATE)
     if not chunks:
-        raise ValueError(f"No non-silent chunks in: {label}")
+        raise ValueError(
+            f"No audible vocal in first {int(MAX_AUDIO_SECONDS)}s: {label}. "
+            "Try the original MP3 (not a pre-decoded WAV), or a clip where the vocal starts earlier."
+        )
     embeddings, chunk_rms = embedding_for_chunks(classifier, chunks)
     logger.info("embedding done for %s (%d chunk(s))", label, len(embeddings))
     return waveform, embeddings, chunk_rms
@@ -2999,7 +3204,7 @@ def timbre_similarity(
         float(demo.get("bandwidth_hz", 0) or 0),
         2000.0,
     )
-    return _round_score(0.50 * mfcc_score + 0.25 * centroid_score + 0.25 * bandwidth_score)
+    return _round_score(0.35 * mfcc_score + 0.35 * centroid_score + 0.30 * bandwidth_score)
 
 
 def quality_score(waveform: Any) -> float:
@@ -3067,11 +3272,8 @@ def _genre_weights(query_tags: dict) -> dict:
     elif genre in (chr(114)+chr(97)+chr(112), chr(104)+chr(105)+chr(112)+chr(45)+chr(104)+chr(111)+chr(112)):
         w.update({chr(115)+chr(112)+chr(101)+chr(97)+chr(107)+chr(101)+chr(114): 0.30, chr(116)+chr(105)+chr(109)+chr(98)+chr(114)+chr(101): 0.35, chr(112)+chr(105)+chr(116)+chr(99)+chr(104): 0.18})
     elif genre == "singing":
-        # Explicit branch for the Voice Style "Singing" filter. Weights match
-        # the base V4_WEIGHTS defaults (melodic vocal delivery: pitch and
-        # timbre weighted highest), kept explicit here so it's easy to find
-        # and tune independently of the no-genre-tag default in the future.
-        w.update({"speaker": 0.15, "timbre": 0.42, "pitch": 0.30, "quality": 0.05, "vocal_character": 0.08})
+        # Melodic delivery: pitch + speaker; recording quality stays minimal.
+        w.update({"speaker": 0.30, "timbre": 0.24, "pitch": 0.35, "quality": 0.02, "vocal_character": 0.09})
     total = sum(w.values())
     return {k: v / total for k, v in w.items()}
 
@@ -3084,14 +3286,20 @@ def combine_scores(
     vocal_character: float = 50.0,
     query_tags: dict = None,
 ) -> float:
-    """Weighted final similarity (0–100) using V4_WEIGHTS."""
-    w = _genre_weights(query_tags)
-    return _round_score(
-        w["speaker"] * speaker
-        + w["timbre"] * timbre
-        + w["pitch"] * pitch
-        + w["quality"] * quality
-        + w.get("vocal_character", 0.0) * vocal_character
+    """Weighted final similarity (0–100) via Matching Engine specialists."""
+    from matching_modules.scoring import (
+        assemble_match_score,
+        weights_from_main_genre_weights,
+    )
+
+    w = weights_from_main_genre_weights(_genre_weights(query_tags))
+    return assemble_match_score(
+        embedding=speaker,
+        pitch=pitch,
+        timbre=timbre,
+        style=vocal_character,
+        recording_quality=quality,
+        weights=w,
     )
 
 
@@ -3589,7 +3797,9 @@ def _run_voice_match(
                     demo_waveform, ECAPA_SAMPLE_RATE
                 )
                 _save_demo_profile(demo_filename, demo_waveform, demo_embeddings, demo_chunk_rms, demo_pitch, demo_timbre, demo_vocal_character)
-                demo_language = ""
+                demo_language = str(
+                    _load_demo_display_metadata(demo_filename).get("language", "")
+                )
             timbre_sc = timbre_similarity(ai_timbre, demo_timbre)
             _apply_multi_feature_vocal_classification(
                 demo_pitch,
@@ -3612,8 +3822,11 @@ def _run_voice_match(
                     "articulation_speed", 0.0
                 ),
                 "dynamic_range": demo_vocal_character.get("dynamic_range", 0.0),
-            "demo_language": demo_language,
-            "display_name": json.loads((_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).read_text()).get("display_name", "") if (_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).exists() else "",
+            "demo_language": demo_language
+                or str(_load_demo_display_metadata(demo_filename).get("language", "")),
+            "display_name": str(
+                _load_demo_display_metadata(demo_filename).get("display_name", "")
+            ),
             }
             _apply_demo_vocal_type_fields(
                 demo_row,
@@ -3700,8 +3913,11 @@ def _run_voice_match(
                         _mfcc_cosine_similarity(ai_timbre, demo_timbre)
                     ),
                         "best_match_sec": best_match_sec,
-                    "demo_language": demo_language,
-                "display_name": json.loads((_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).read_text()).get("display_name", "") if (_DEMO_PROFILES_DIR / demo_filename.replace(".wav", ".json")).exists() else "",
+                    "demo_language": demo_language
+                    or str(_load_demo_display_metadata(demo_filename).get("language", "")),
+                "display_name": str(
+                    _load_demo_display_metadata(demo_filename).get("display_name", "")
+                ),
                 "breathiness": demo_row.get("breathiness", 0.0),
                 "vibrato_rate": demo_row.get("vibrato_rate", 0.0),
                 "vibrato_depth": demo_row.get("vibrato_depth", 0.0),
@@ -3733,11 +3949,6 @@ def _run_voice_match(
             "no_valid_demos",
         )
 
-        if gender_override and gender_override in ("male", "female"):
-            results = [
-                row for row in results
-                if row.get("final_vocal_type") == gender_override
-            ]
     finalized = _finalize_voice_match_results(results, partial=partial, query_tags=query_tags, gender_override=gender_override, ai_language=ai_language, part_language=part_language)
     _sync_progress(progress, finalized["results"], partial)
     logger.info("returning finalized, keys: %s", list(finalized.keys()) if finalized else None)
@@ -4561,12 +4772,93 @@ def _load_feedback() -> dict:
 def _save_feedback(data: dict) -> None:
     open(_FEEDBACK_PATH, chr(119)).write(_json.dumps(data, indent=2))
 
-def _feedback_boost(demo_filename: str) -> float:
+def _feedback_counts(demo_filename: str) -> tuple[int, int]:
     fb = _load_feedback()
     entry = fb.get(demo_filename, {})
-    good = int(entry.get(chr(103)+chr(111)+chr(111)+chr(100), 0))
-    bad = int(entry.get(chr(98)+chr(97)+chr(100), 0))
-    return max(-15.0, min(15.0, (good - bad) * 3.0))
+    good = int(entry.get("good", 0) or 0)
+    bad = int(entry.get("bad", 0) or 0)
+    return good, bad
+
+
+def _feedback_boost(demo_filename: str) -> float:
+    good, bad = _feedback_counts(demo_filename)
+    # Stronger than before: one clear "No" should move the needle.
+    return max(-30.0, min(30.0, (good - bad) * 8.0))
+
+
+def _apply_negative_feedback_demotion(results: list[dict]) -> None:
+    """If human said No more than Yes, do not keep a high % near the top.
+
+    Displayed similarity used to ignore Да/Нет (only final_ranking_score moved),
+    so a rejected demo could still show ~80% in 2nd place after stretch.
+    """
+    if not results:
+        return
+    accepted: list[dict] = []
+    rejected: list[dict] = []
+    for row in results:
+        filename = str(row.get("filename", "") or row.get("original_filename", "") or "")
+        good, bad = _feedback_counts(filename)
+        net = good - bad
+        boost = _feedback_boost(filename)
+        # Fold human vote into the % the user sees.
+        row["similarity"] = _round_score(float(row.get("similarity", 0) or 0) + boost * 0.7)
+        row["feedback_boost"] = round(boost, 1)
+        if net < 0:
+            row["similarity"] = _round_score(min(float(row["similarity"]), 45.0))
+            if "final_ranking_score" in row:
+                row["final_ranking_score"] = _round_score(
+                    min(float(row.get("final_ranking_score", 0) or 0), 30.0)
+                )
+            reasons = row.get("reasons")
+            if isinstance(reasons, list) and "demoted: human No feedback" not in reasons:
+                reasons.append("demoted: human No feedback")
+            rejected.append(row)
+        else:
+            accepted.append(row)
+    if not rejected or not accepted:
+        results[:] = accepted + rejected
+        return
+    results[:] = accepted + rejected
+    logger.info(
+        "Negative feedback demotion: %d accepted/neutral first, %d rejected last",
+        len(accepted),
+        len(rejected),
+    )
+
+
+_PAIRWISE_FEEDBACK_PATH = Path(__file__).parent / "pairwise_feedback.json"
+
+
+def _load_pairwise_feedback() -> dict:
+    try:
+        return json.loads(_PAIRWISE_FEEDBACK_PATH.read_text())
+    except Exception:
+        return {"pairs": []}
+
+
+def _save_pairwise_feedback(data: dict) -> None:
+    _PAIRWISE_FEEDBACK_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _pairwise_boost(demo_filename: str, ai_reference: str = "") -> float:
+    """Boost from human A-vs-B judgments for the same AI reference."""
+    if not demo_filename:
+        return 0.0
+    pairs = _load_pairwise_feedback().get("pairs", [])
+    wins = 0
+    losses = 0
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            continue
+        ref = str(pair.get("ai_reference", "") or "")
+        if ai_reference and ref and ref != ai_reference:
+            continue
+        if pair.get("closer") == demo_filename:
+            wins += 1
+        elif pair.get("farther") == demo_filename:
+            losses += 1
+    return max(-20.0, min(20.0, (wins - losses) * 5.0))
 
 
 @app.post("/feedback")
@@ -4580,6 +4872,88 @@ async def submit_feedback(payload: dict):
     entry[rating] = entry.get(rating, 0) + 1
     _save_feedback(fb)
     return {"status": "ok", "entry": entry}
+
+
+@app.get("/feedback/demo/{filename:path}")
+async def get_demo_feedback(filename: str):
+    """Return Yes/No counts for one demo (for results UI)."""
+    good, bad = _feedback_counts(filename)
+    return {
+        "demo_filename": filename,
+        "good": good,
+        "bad": bad,
+        "net": good - bad,
+    }
+
+
+@app.post("/feedback/reset")
+async def reset_demo_feedback(payload: dict):
+    """Clear Yes/No counts for one demo so the user can recalibrate."""
+    demo_filename = str(payload.get("demo_filename", "")).strip()
+    if not demo_filename:
+        return {"error": "demo_filename required"}
+    fb = _load_feedback()
+    if demo_filename in fb:
+        del fb[demo_filename]
+        _save_feedback(fb)
+    return {"status": "ok", "demo_filename": demo_filename, "good": 0, "bad": 0}
+
+
+@app.post("/feedback/pairwise/reset")
+async def reset_pairwise_for_reference(payload: dict):
+    """Remove pairwise duel rows for one AI reference file."""
+    ai_reference = str(
+        payload.get("ai_reference", "") or payload.get("ai_reference_filename", "")
+    ).strip()
+    if not ai_reference:
+        return {"error": "ai_reference required"}
+    data = _load_pairwise_feedback()
+    pairs = data.get("pairs", [])
+    kept = [p for p in pairs if str(p.get("ai_reference", "")) != ai_reference]
+    removed = len(pairs) - len(kept)
+    data["pairs"] = kept
+    _save_pairwise_feedback(data)
+    return {"status": "ok", "ai_reference": ai_reference, "removed": removed, "remaining": len(kept)}
+
+
+@app.post("/feedback/pairwise")
+async def submit_pairwise_feedback(payload: dict):
+    closer = str(payload.get("closer", "") or payload.get("winner", "")).strip()
+    farther = str(payload.get("farther", "") or payload.get("loser", "")).strip()
+    ai_reference = str(payload.get("ai_reference", "") or payload.get("ai_reference_filename", "")).strip()
+    if not closer or not farther or closer == farther:
+        return {"error": "closer and farther must be different demo filenames"}
+    data = _load_pairwise_feedback()
+    pairs = data.setdefault("pairs", [])
+    pairs.append(
+        {
+            "ai_reference": ai_reference,
+            "closer": closer,
+            "farther": farther,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _save_pairwise_feedback(data)
+    return {"status": "ok", "total_pairs": len(pairs)}
+
+
+@app.get("/feedback/summary")
+async def feedback_summary():
+    fb = _load_feedback()
+    pairs = _load_pairwise_feedback().get("pairs", [])
+    return {
+        "absolute": fb,
+        "pairwise_count": len(pairs),
+        "pairwise_recent": pairs[-10:] if pairs else [],
+    }
+
+
+@app.get("/matching/specialists")
+async def matching_specialists():
+    """List Matching Engine specialists (swap registry)."""
+    from matching_modules import list_specialists
+
+    return {"specialists": list_specialists()}
 
 
 @app.put("/demo-language")

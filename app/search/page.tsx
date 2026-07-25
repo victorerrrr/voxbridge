@@ -95,14 +95,28 @@ function SearchPageContent() {
       });
       setLoadingProgress(80);
 
-      if (!res.ok) throw new Error("Matching failed: " + res.status);
+      if (!res.ok) {
+        let detail = res.status;
+        try {
+          const errBody = await res.json();
+          detail = errBody.detail ?? errBody.message ?? errBody.error ?? detail;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(String(detail));
+      }
       const data = await res.json();
       sessionStorage.setItem("voxbridge_match_results", JSON.stringify(data));
       setLoadingProgress(100);
       router.push("/results");
     } catch (err) {
       console.error(err);
-      alert("Matching failed. Is the backend running?");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      alert(
+        msg.includes("No audible vocal")
+          ? msg
+          : `Matching failed: ${msg}\n\nIs Python API running on port 8000?`
+      );
     } finally {
       setIsLoading(false);
       setLoadingProgress(0);
@@ -296,7 +310,7 @@ function SearchPageContent() {
                 onChange={(e) => setAiLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["Any","English","Spanish","Hindi","Afrikaans","Other"].map(l => (
+                {["Any","English","Spanish","Russian","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>
@@ -308,7 +322,7 @@ function SearchPageContent() {
                 onChange={(e) => setPartLanguage(e.target.value)}
                 className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none ring-purple-500/50 focus:ring-2"
               >
-                {["Any","English","Spanish","Hindi","Afrikaans","Other"].map(l => (
+                {["Any","English","Spanish","Russian","Hindi","Afrikaans","Other"].map(l => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>

@@ -2,5 +2,93 @@
   "Real vocal 2.wav": {
     "good": 1,
     "bad": 0
+  },
+  "Real vocal 2 girl.wav": {
+    "good": 3,
+    "bad": 0
+  },
+  "Real vocal spanish girl 6.wav": {
+    "good": 0,
+    "bad": 3
+  },
+  "EN female bright 02.mp3": {
+    "good": 0,
+    "bad": 1
+  },
+  "EN male bright 01.mp3": {
+    "good": 1,
+    "bad": 3
+  },
+  "EN male bright 02.mp3": {
+    "good": 4,
+    "bad": 1
+  },
+  "Real vocal african girl 7.wav": {
+    "good": 0,
+    "bad": 1
+  },
+  "Real vocal 5 girl \u043d\u0430 \u043e\u0434\u043d\u043e\u0438\u0306 \u043d\u043e\u0442\u0435.wav": {
+    "good": 0,
+    "bad": 1
+  },
+  "Real vocal indian girl 8.wav": {
+    "good": 0,
+    "bad": 1
+  },
+  "BRZ male bright 01.mp3": {
+    "good": 0,
+    "bad": 2
+  },
+  "Real vocal 4 girl high.wav": {
+    "good": 0,
+    "bad": 1
+  },
+  "Real vocal 3 boy.wav": {
+    "good": 0,
+    "bad": 4
+  },
+  "EN female bright 01.mp3": {
+    "good": 1,
+    "bad": 0
+  },
+  "Real vocal 1 (\u043c \u0432 \u0430\u0444).wav": {
+    "good": 0,
+    "bad": 4
+  },
+  "EN female warm 01.mp3": {
+    "good": 1,
+    "bad": 0
+  },
+  "EN male warm 01.mp3": {
+    "good": 4,
+    "bad": 0
+  },
+  "EN male warm 02.mp3": {
+    "good": 4,
+    "bad": 1
+  },
+  "EN male bright 03.mp3": {
+    "good": 0,
+    "bad": 3
+  },
+  "RU male warm 01.mp3": {
+    "good": 2,
+    "bad": 1
+  },
+  "RU male bright 01.mp3": {
+    "good": 3,
+    "bad": 0
+  },
+  "EN male rap bright 01.mp3": {
+    "good": 0,
+    "bad": 2
+  },
+  "EN male rap E bright 01.mp3": {
+    "good": 0,
+    "bad": 3
+  },
+  "BRZ male bright L 01.mp3": {
+    "good": 0,
+    "bad": 2
   }
 }

@@ -16,8 +16,9 @@ The core idea:
 - Tailwind CSS
 - React components
 - **Supabase** — auth, profiles, vocalist requests, orders, reviews (live)
+- File uploads API uses `SUPABASE_SECRET_KEY` in `.env.local` (server only)
 - Mock/demo data for featured vocalists on `/home` and legacy matching UI
-- Python voice-matching service (port 8000) for Admin Lab only
+- Python voice-matching service (port 8000) for Admin Lab **and** producer `/search` → `/results`
 
 ## Development Rules
 - Do not rewrite the whole project unless necessary.
@@ -44,6 +45,8 @@ See **PROJECT_MEMO.md** and **HANDOFF_RU.md** for full route map.
 
 ## Product strategy
 - **Differentiator:** acoustic AI vocal matching (user calibrates with real vocalists).
+- **Matching philosophy:** do not build a voice model from scratch — combine specialists (embedding, pitch, timbre, style, recording quality) and own the **scoring / decision layer**. See **`docs/MATCHING_ENGINE_PHILOSOPHY.md`** and `voice-matching-service/matching_modules/`.
+- Producer path `/search` → Python API → `/results` is **live lab** (not mock). Yes/No + pairwise duels calibrate ranking.
 - **Without matching:** improve marketplace parity — see **`docs/COMPETITIVE_ANALYSIS.md`** (living doc; update status after sprints).
 - Discovery: Match (primary) · Search by name · Browse later (not Home hero).
 

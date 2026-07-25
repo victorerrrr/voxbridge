@@ -1,0 +1,12 @@
+[
+  {
+    "id": "tepliy-vozduh-female-singing",
+    "ai_reference": "Tepliy vozduh. AI vocal.mp3",
+    "voice_style": "singing",
+    "gender": "female",
+    "language": "Russian",
+    "expected_top_demo": "Real vocal 2 girl.wav",
+    "expected_display_name": "Sofia",
+    "notes": "Human ear: Sofia closer than Elena. Use this case after every scoring change."
+  }
+]
